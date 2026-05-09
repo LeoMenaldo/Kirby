@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/">
+        <file>tu/kirby_daiji.png</file>
+        <file>tu/kirby_fly.png</file>
+        <file>tu/kirby_walk.png</file>
+        <file>tu/Assets.png</file>
+        <file>tu/Background_1.png</file>
+        <file>tu/Background_2.png</file>
+        <file>tu/Desert/1.Sky.png</file>
+        <file>tu/Desert/2.Clouds.png</file>
+        <file>tu/Desert/3.Mountains.png</file>
+        <file>tu/Desert/4.Dunes.png</file>
+        <file>tu/Desert/5.Ground.png</file>
+        <file>tu/Desert/Desert_free.gif</file>
+        <file>tu/fangkuai.png</file>
+    </qresource>
+</RCC>
