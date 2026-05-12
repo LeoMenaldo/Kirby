@@ -7,20 +7,25 @@
 
 class Player : public GameObject {
 public:
-    enum State { IDLE, WALKING, JUMPING };
+    enum State { IDLE, WALKING, JUMPING, ROLLING };  // 新增 ROLLING
+
+    static constexpr double rollSpeed = 8;         // 翻滚时的水平速度
 
     Player();
     void updateLogic() override;
     void setState(State newState);
+    void startRoll();                                // 开始翻滚
+    void endRoll();                                  // 结束翻滚
 
-    QPainterPath shape() const override;   // 强制固定碰撞箱
+    QPainterPath shape() const override;
 
     State currentState;
     bool isOnGround = false;
     bool facingRight = true;
     bool isHovering = false;
     bool canDoubleJump = false;
-    // vx 和 vy 已继承自 GameObject，此处不再重复声明
+    bool isRolling = false;                          // 是否正在翻滚
+    int rollTimer = 0;                               // 翻滚剩余计时
 
 private:
     int currentFrame = 0;
@@ -28,6 +33,10 @@ private:
     QVector<QPixmap> idleFrames;
     QVector<QPixmap> walkFrames;
     QVector<QPixmap> jumpFrames;
+    QVector<QPixmap> rollFrames;                     // 翻滚动画帧
+
+    int rollCurrentFrame = 0;                        // 翻滚动画当前帧索引
+    int rollAnimTimer = 0;                           // 翻滚动画计时
 };
 
 #endif // PLAYER_H

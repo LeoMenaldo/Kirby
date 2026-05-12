@@ -14,7 +14,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     view = new QGraphicsView(scene, this);
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setCentralWidget(view);
 
     qreal sceneW = scene->sceneRect().width();
@@ -44,15 +44,31 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 4. 关卡矩阵 (Tile实体)
     QStringList levelData = {
-        "0000000000000000000000000",
-        "0000000000000000000000000",
-        "0000000000000000000000000",
-        "0000000000000000000000000",
-        "0000000000000000000000000",
-        "0000000000000111100000000",
-        "1110000000000222200011111",
-        "2221111333111222211122222",
-        "2222222444222222222222222"
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000011110000000000000000000000000000000000000",
+        "111000000000022220001111111111111111111111111111111111",
+        "222111133311122221112222222222222222222222222222222222",
+        "222222244422222222222222222222222222222222222222222222",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "111111111110011111111111111111111111111111111111111111",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "111111111110011111111111111111111111111111111111111111",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000000000000",
+        "111111111111111111111111111111111111111111111111111111",
+
+
+
+
     };
 
     int renderSize = originalSize * 2;               // 48像素
@@ -91,7 +107,6 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 MainWindow::~MainWindow() { delete ui; }
-
 void MainWindow::keyPressEvent(QKeyEvent *event) {
     if (event->isAutoRepeat()) return;
     keys.insert(event->key());
@@ -102,6 +117,8 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         lastHorizontalKey = event->key();
     else if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up)
         jumpBuffer = 6;
+    else if (event->key() == Qt::Key_K)            // 新增翻滚
+        player->startRoll();
 }
 
 void MainWindow::keyReleaseEvent(QKeyEvent *event) {
@@ -112,23 +129,49 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void MainWindow::gameUpdate() {
-    // 1. 水平输入
-    int activeKey = 0;
-    if (keys.contains(lastHorizontalKey)) activeKey = lastHorizontalKey;
-    else {
-        if (keys.contains(Qt::Key_A) || keys.contains(Qt::Key_Left)) activeKey = Qt::Key_A;
-        else if (keys.contains(Qt::Key_D) || keys.contains(Qt::Key_Right)) activeKey = Qt::Key_D;
-    }
+    // ====== 翻滚状态特殊处理 ======
+    if (player->isRolling) {
+        player->vx = player->facingRight ? Player::rollSpeed : -Player::rollSpeed;
 
-    if (activeKey == Qt::Key_A || activeKey == Qt::Key_Left) {
-        player->vx = -5; player->facingRight = false;
-    } else if (activeKey == Qt::Key_D || activeKey == Qt::Key_Right) {
-        player->vx = 5; player->facingRight = true;
+        if (player->rollTimer>=0) {
+            // 允许跳跃打断
+            if (jumpBuffer > 0) {
+                if (player->isOnGround) {
+                    player->vy = -16;
+                    coyoteTime = 0;
+                    jumpBuffer = 0;
+                    player->endRoll();
+                } else if (player->canDoubleJump) {
+                    player->vy = -15;
+                    player->canDoubleJump = false;
+                    jumpBuffer = 0;
+                    player->endRoll();
+                }
+            }
+        } else {
+            jumpBuffer = 0;
+            coyoteTime = 0;
+            player->isHovering = false;
+        }
     } else {
-        player->vx = 0;
+        // 1. 水平输入（原有逻辑）
+        int activeKey = 0;
+        if (keys.contains(lastHorizontalKey)) activeKey = lastHorizontalKey;
+        else {
+            if (keys.contains(Qt::Key_A) || keys.contains(Qt::Key_Left)) activeKey = Qt::Key_A;
+            else if (keys.contains(Qt::Key_D) || keys.contains(Qt::Key_Right)) activeKey = Qt::Key_D;
+        }
+
+        if (activeKey == Qt::Key_A || activeKey == Qt::Key_Left) {
+            player->vx = -5; player->facingRight = false;
+        } else if (activeKey == Qt::Key_D || activeKey == Qt::Key_Right) {
+            player->vx = 5; player->facingRight = true;
+        } else {
+            player->vx = 0;
+        }
     }
 
-    // 2. 重力
+    // 2. 重力（原样保留，翻滚时 isHovering=false 故走正常下落分支）
     if (!player->isOnGround) {
         if (player->isHovering && player->vy > 0) {
             player->vy += 0.1;
@@ -139,32 +182,35 @@ void MainWindow::gameUpdate() {
         }
     }
 
-    // 3. 土狼时间与跳跃缓冲
-    if (player->isOnGround) {
-        coyoteTime = 6;
-        player->canDoubleJump = true;
-    } else {
-        if (coyoteTime > 0) coyoteTime--;
-    }
-
-    if (jumpBuffer > 0) {
-        if (coyoteTime > 0) {
-            player->vy = -16;
-            coyoteTime = 0;
-            jumpBuffer = 0;
-        } else if (player->canDoubleJump) {
-            player->vy = -15;
-            player->canDoubleJump = false;
-            jumpBuffer = 0;
-            player->currentState = Player::IDLE;
+    // 3. 土狼时间与跳跃缓冲（只有在非翻滚时生效，翻滚时已清零）
+    if (!player->isRolling) {
+        if (player->isOnGround) {
+            coyoteTime = 6;
+            player->canDoubleJump = true;
+        } else {
+            if (coyoteTime > 0) coyoteTime--;
         }
-        if (jumpBuffer > 0) jumpBuffer--;
+
+        if (jumpBuffer > 0) {
+            if (coyoteTime > 0) {
+                player->vy = -16;
+                coyoteTime = 0;
+                jumpBuffer = 0;
+            } else if (player->canDoubleJump) {
+                player->vy = -15;
+                player->canDoubleJump = false;
+                jumpBuffer = 0;
+                player->currentState = Player::IDLE;
+            }
+            if (jumpBuffer > 0) jumpBuffer--;
+        }
     }
 
-    // 4. 水平移动 + 碰撞
+    // 4. 水平移动 + 碰撞（翻滚时的 vx 也会在此处理）
     player->setPos(player->x() + player->vx, player->y());
     QRectF pRect = player->sceneBoundingRect();
-    for (Tile *tile : floors) {
+    const auto &constFloors = floors;
+    for (Tile *tile : constFloors) {
         if (player->collidesWithItem(tile)) {
             QRectF tRect = tile->sceneBoundingRect();
             if (player->vx > 0)
@@ -175,36 +221,34 @@ void MainWindow::gameUpdate() {
         }
     }
 
-    // 5. 垂直检测（下探1像素 + 完整碰撞）
+    // 5. 垂直检测（保持不变）
     bool onGround = false;
 
-    // 5a. 试探下移1像素，检测地面
     player->setPos(player->x(), player->y() + 1);
     pRect = player->sceneBoundingRect();
-    for (Tile *tile : floors) {
+    for (Tile *tile : constFloors) {
         if (player->collidesWithItem(tile)) {
-            if (player->vy >= 0) {  // 只有向下或静止才站上去
+            if (player->vy >= 0) {
                 QRectF tRect = tile->sceneBoundingRect();
                 player->setPos(player->x(), tRect.top() - pRect.height());
                 player->vy = 0;
                 onGround = true;
             }
-            break;      // 检测到地面即停止
+            break;
         }
     }
 
     if (!onGround) {
-        // 没踩到地，退回下探，再应用 vy 移动
         player->setPos(player->x(), player->y() - 1 + player->vy);
         pRect = player->sceneBoundingRect();
-        for (Tile *tile : floors) {
+        for (Tile *tile : constFloors) {
             if (player->collidesWithItem(tile)) {
                 QRectF tRect = tile->sceneBoundingRect();
-                if (player->vy >= 0) {         // 下落 → 站在方块上
+                if (player->vy >= 0) {
                     player->setPos(player->x(), tRect.top() - pRect.height());
                     player->vy = 0;
                     onGround = true;
-                } else {                       // 上升 → 撞头
+                } else {
                     player->setPos(player->x(), tRect.bottom());
                     player->vy = 0;
                 }
@@ -215,8 +259,17 @@ void MainWindow::gameUpdate() {
 
     player->isOnGround = onGround;
 
-    // 6. 状态与视角
-    player->isHovering = (keys.contains(Qt::Key_W) || keys.contains(Qt::Key_Up));
+    // 6. 翻滚结束判定
+    if (player->isRolling) {
+        player->rollTimer--;
+        if (player->rollTimer <= 0) {
+            player->endRoll();
+        }
+    }
+
+    // 7. 状态更新与视角
+    player->isHovering = (keys.contains(Qt::Key_W) || keys.contains(Qt::Key_Up))
+                         && !player->isRolling;  // 翻滚时禁止漂浮
     player->updateLogic();
     view->centerOn(player);
 }

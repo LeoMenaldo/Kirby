@@ -29,6 +29,7 @@ private slots:
     void gameUpdate();
 
 private:
+    void loadLevel(int level);
     Ui::MainWindow *ui;
     QGraphicsScene *scene;
     QGraphicsView *view;

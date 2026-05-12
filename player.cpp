@@ -25,6 +25,13 @@ Player::Player() {
         jumpFrames.push_back(flySheet.copy(i * frameSize, 0, frameSize, frameSize));
     }
 
+    // 翻滚（新增）
+    QPixmap rollSheet(":/tu/kirby_fangun.png");
+    int rollCount = rollSheet.width() / frameSize;
+    for (int i = 0; i < rollCount; i++) {
+        rollFrames.push_back(rollSheet.copy(i * frameSize, 0, frameSize, frameSize));
+    }
+
     if (!idleFrames.isEmpty()) {
         setPixmap(idleFrames[0]);
     }
@@ -38,8 +45,47 @@ void Player::setState(State newState) {
     }
 }
 
+void Player::startRoll() {
+    if (isRolling || rollFrames.isEmpty()) return;
+
+    isRolling = true;
+    setState(ROLLING);                         // 切换到翻滚状态
+    rollTimer = rollFrames.size()*2;
+    rollCurrentFrame = 0;
+    rollAnimTimer = 0;
+
+    // 显示第一帧
+    QPixmap img = rollFrames[0];
+    if (!facingRight)
+        img = img.transformed(QTransform().scale(-1, 1));
+    setPixmap(img);
+}
+
+void Player::endRoll() {
+    isRolling = false;
+    // 恢复到地面待机或空中状态（交由下次updateLogic判断）
+    setState(isOnGround ? IDLE : JUMPING);
+}
+
 void Player::updateLogic() {
-    // 1. 状态切换（不再负责重力/位移）
+    // 翻滚中：只更新翻滚动画，不处理常规状态/动画
+    if (isRolling) {
+        rollAnimTimer++;
+        if (rollAnimTimer >= 2) {
+            rollAnimTimer = 0;
+            rollCurrentFrame++;
+            if (rollCurrentFrame >= rollFrames.size()) {
+                rollCurrentFrame = rollFrames.size() - 1; // 停在最后一帧
+            }
+            QPixmap img = rollFrames[rollCurrentFrame];
+            if (!facingRight)
+                img = img.transformed(QTransform().scale(-1, 1));
+            setPixmap(img);
+        }
+        return; // 跳过原有状态切换和动画逻辑
+    }
+
+    // 原有逻辑（保持不变）
     State targetState;
     if (!isOnGround) {
         targetState = JUMPING;
@@ -53,7 +99,6 @@ void Player::updateLogic() {
         currentFrame = 0;
     }
 
-    // 2. 动画播放
     animTimer++;
     if (animTimer >= 6) {
         animTimer = 0;
