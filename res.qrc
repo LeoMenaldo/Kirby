@@ -8,5 +8,11 @@
         <file>tu/Background_2.png</file>
         <file>tu/fangkuai.png</file>
         <file>tu/kirby_fangun.png</file>
+        <file>tu/Clouds 1/1.png</file>
+        <file>tu/Clouds 1/2.png</file>
+        <file>tu/Clouds 1/3.png</file>
+        <file>tu/Clouds 1/4.png</file>
+        <file>tu/ice.png</file>
+        <file>tu/fire_enemy.png</file>
     </qresource>
 </RCC>

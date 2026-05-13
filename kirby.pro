@@ -3,6 +3,8 @@ QT       += core gui widgets
 
 # 包含你的所有代码文件
 SOURCES += \
+    basicenemy.cpp \
+    enemy.cpp \
     main.cpp \
     mainwindow.cpp \
     gameobject.cpp \
@@ -10,6 +12,8 @@ SOURCES += \
     tile.cpp
 
 HEADERS += \
+    basicenemy.h \
+    enemy.h \
     mainwindow.h \
     gameobject.h \
     player.h \

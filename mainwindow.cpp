@@ -1,6 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-
+#include "basicenemy.h"
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -10,31 +10,41 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 1. 场景
     scene = new QGraphicsScene(this);
-    scene->setSceneRect(0, 0, 5000, 1000);
+    scene->setSceneRect(0, 0, 5000, 1000); // 地图长度设为 5000
 
     view = new QGraphicsView(scene, this);
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    view->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // 固定高度通常不需要垂直滚动条
     setCentralWidget(view);
 
-    qreal sceneW = scene->sceneRect().width();
     qreal sceneH = scene->sceneRect().height();
 
-    // 2. 双层背景
-    QStringList bgPaths = {":/tu/Background_1.png", ":/tu/Background_2.png"};
+    // 2. 四层天空背景（修改部分：记录到 backgroundLayers）
+    QStringList bgPaths = {
+        ":/tu/Clouds 1/1.png",
+        ":/tu/Clouds 1/2.png",
+        ":/tu/Clouds 1/3.png",
+        ":/tu/Clouds 1/4.png"
+    };
+
     for(int i = 0; i < bgPaths.size(); ++i) {
         QPixmap pix(bgPaths[i]);
         if(!pix.isNull()) {
+            // 将背景缩放到场景高度，保持比例
             QPixmap scaledPix = pix.scaledToHeight(sceneH, Qt::SmoothTransformation);
-            QGraphicsRectItem *bg = new QGraphicsRectItem(0, 0, sceneW, sceneH);
+
+            // 创建一个矩形，宽度使用缩放后的图片宽度
+            QGraphicsRectItem *bg = new QGraphicsRectItem(0, 0, scaledPix.width(), sceneH);
             bg->setBrush(QBrush(scaledPix));
             bg->setPen(Qt::NoPen);
             bg->setZValue(-100 + i);
             scene->addItem(bg);
+
+            backgroundLayers.append(bg); // 记录图层
         }
     }
 
-    // 3. 切割方块素材
+    // 3. 切割方块素材 (保持不变)
     QPixmap tileSheet(":/tu/fangkuai.png");
     int originalSize = 24;
     QPixmap grass        = tileSheet.copy(0, 0, originalSize, originalSize);
@@ -42,36 +52,25 @@ MainWindow::MainWindow(QWidget *parent)
     QPixmap waterSurface = tileSheet.copy(originalSize * 2, 0, originalSize, originalSize);
     QPixmap waterBody    = tileSheet.copy(originalSize * 3, 0, originalSize, originalSize);
 
-    // 4. 关卡矩阵 (Tile实体)
+    // 4. 关卡矩阵 (保持不变，确保地图长度足够)
     QStringList levelData = {
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000011110000000000000000000000000000000000000",
-        "111000000000022220001111111111111111111111111111111111",
-        "222111133311122221112222222222222222222222222222222222",
-        "222222244422222222222222222222222222222222222222222222",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "111111111110011111111111111111111111111111111111111111",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "111111111110011111111111111111111111111111111111111111",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000000000000",
-        "111111111111111111111111111111111111111111111111111111",
-
-
-
-
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000",
+        "000000000000000000000000000000000000000000000", // 让地面大概出现在第10行左右
+        "111111111111111111111111111111111111111111111",
     };
 
-    int renderSize = originalSize * 2;               // 48像素
+    int renderSize = originalSize * 2;
     int totalMapHeight = levelData.size() * renderSize;
     int bottomOffset = sceneH - totalMapHeight;
 
@@ -79,33 +78,37 @@ MainWindow::MainWindow(QWidget *parent)
         for (int c = 0; c < levelData[r].length(); c++) {
             Tile *tile = nullptr;
             char type = levelData[r][c].toLatin1();
-
             if (type == '1')       tile = new Tile(Tile::Grass, grass);
             else if (type == '2')  tile = new Tile(Tile::Dirt, dirt);
             else if (type == '3')  tile = new Tile(Tile::WaterSurface, waterSurface);
             else if (type == '4')  tile = new Tile(Tile::WaterBody, waterBody);
-
             if (tile) {
                 tile->setPos(c * renderSize, r * renderSize + bottomOffset);
                 tile->setScale(2.0);
                 scene->addItem(tile);
-                if (type == '1' || type == '2')
-                    floors.append(tile);    // 固体参与碰撞
+                if (type == '1' || type == '2') floors.append(tile);
             }
         }
     }
 
     // 5. 卡比
     player = new Player();
-    player->setPos(100, 200);
+    player->setPos(100, 500); // 调整初始高度到地面附近
     scene->addItem(player);
-
+    //生成敌人！
+        // 传入参数："图片路径", 帧数(你的图是5帧), 速度, 能力标签(FIRE)
+    BasicEnemy* fireEnemy = new BasicEnemy(":/tu/fire_enemy.png", 5, 1.5, Enemy::FIRE);
+    fireEnemy->setScale(2);
+    fireEnemy->setPos(400, 500); // 把它放在卡比右边一点的位置
+    scene->addItem(fireEnemy);
+    // （重要）你需要把生成的敌人存起来，以便在 gameUpdate 里让它们移动和检测碰撞
+    // 记得在 mainwindow.h 里加一个 QList<Enemy*> enemies;
+    enemies.append(fireEnemy);
     // 6. 游戏循环
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MainWindow::gameUpdate);
     timer->start(16);
 }
-
 MainWindow::~MainWindow() { delete ui; }
 void MainWindow::keyPressEvent(QKeyEvent *event) {
     if (event->isAutoRepeat()) return;
@@ -272,4 +275,79 @@ void MainWindow::gameUpdate() {
                          && !player->isRolling;  // 翻滚时禁止漂浮
     player->updateLogic();
     view->centerOn(player);
+
+
+    // ====== 敌人物理与逻辑计算 ======
+    for (Enemy* enemy : enemies) {
+        if (enemy->isDead) continue;
+
+        // 1. 更新敌人自身逻辑 (决定 vx 和动画)
+        enemy->updateLogic();
+
+        // 2. 水平移动与墙壁碰撞
+        enemy->setPos(enemy->x() + enemy->vx, enemy->y());
+        QRectF eRect = enemy->sceneBoundingRect();
+        for (Tile *tile : floors) {
+            if (enemy->collidesWithItem(tile)) {
+                QRectF tRect = tile->sceneBoundingRect();
+                // 物理阻挡
+                if (enemy->vx > 0) {
+                    enemy->setPos(tRect.left() - eRect.width(), enemy->y());
+                } else if (enemy->vx < 0) {
+                    enemy->setPos(tRect.right(), enemy->y());
+                }
+                // 撞墙后掉头
+                enemy->reverseDirection();
+                break;
+            }
+        }
+
+        // 3. 应用重力 (自由落体算法)
+        enemy->vy += 0.8;
+        if (enemy->vy > 15) enemy->vy = 15; // 终端速度限制
+
+        // 4. 垂直移动与地面碰撞
+        enemy->setPos(enemy->x(), enemy->y() + enemy->vy);
+        eRect = enemy->sceneBoundingRect();
+        for (Tile *tile : floors) {
+            if (enemy->collidesWithItem(tile)) {
+                QRectF tRect = tile->sceneBoundingRect();
+                if (enemy->vy > 0) { // 往下掉时踩到地板
+                    enemy->setPos(enemy->x(), tRect.top() - eRect.height());
+                    enemy->vy = 0; // 落地速度清零
+                }
+                break;
+            }
+        }
+    }
+    // ====== 相机边界限位与背景固定逻辑 ======
+
+    // 1. 获取基础参数
+    qreal cameraX = player->x();
+    qreal cameraY = 850; // 你之前设定的固定高度中心
+    qreal sceneW = scene->sceneRect().width();  // 场景总宽度（如 5000）
+
+    // 获取视口（窗口）的一半宽度
+    // 使用 view->viewport()->width() 能得到更精确的内部绘图区域宽度
+    qreal halfViewW = view->viewport()->width() / 2.0;
+
+    // 2. 边界检查：如果相机的目标位置会让视角超出地图边缘，则强制锁定相机
+    // 处理左边缘
+    if (cameraX < halfViewW) {
+        cameraX = halfViewW;
+    }
+    // 处理右边缘
+    else if (cameraX > sceneW - halfViewW) {
+        cameraX = sceneW - halfViewW;
+    }
+
+    // 3. 执行视角居中
+    view->centerOn(cameraX, cameraY);
+
+    // 4. 背景图层跟随“锁定后”的相机坐标
+    // 这样当相机停止移动时，背景也会因为坐标不再变化而相对于屏幕静止
+    for (QGraphicsRectItem* bg : backgroundLayers) {
+        qreal bgX = cameraX - bg->rect().width() / 2.0;
+        bg->setPos(bgX, 0);
+    }
 }

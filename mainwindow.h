@@ -9,7 +9,7 @@
 #include <QSet>
 #include "player.h"
 #include "tile.h"
-
+#include "enemy.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -35,12 +35,13 @@ private:
     QGraphicsView *view;
     QTimer *timer;
     Player *player;
-
+    QList<QGraphicsRectItem*> backgroundLayers; // 新增：用于记录背景图层
     int lastHorizontalKey = 0;
     QList<Tile*> floors;
     QSet<int> keys;
     int jumpBuffer = 0;
     int coyoteTime = 0;
+    QList<Enemy*> enemies;
 };
 
 #endif // MAINWINDOW_H
