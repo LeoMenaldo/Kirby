@@ -107,11 +107,44 @@ MainWindow::MainWindow(QWidget *parent)
     // 6. 游戏循环
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MainWindow::gameUpdate);
+
+    //初始化生命值 HUD 图标
+    QPixmap lifePix(":/tu/life.png");
+    for (int i = 0; i < 3; ++i) {
+        QGraphicsPixmapItem* icon = new QGraphicsPixmapItem(lifePix);
+        icon->setZValue(1000); // 确保图层在最上方，不被背景或地图遮挡
+        icon->setScale(2.0);   // 如果图片太小，可以像这样放大2倍显示
+        scene->addItem(icon);
+        lifeIcons.append(icon);
+    }
+    // ====== 新增：在场景中生成一个测试蛋糕 ======
+    Cake* testCake = new Cake();
+    testCake->setPos(250, 600);
+    scene->addItem(testCake);
+    cakes.append(testCake);
     timer->start(16);
 }
 MainWindow::~MainWindow() { delete ui; }
+
 void MainWindow::keyPressEvent(QKeyEvent *event) {
     if (event->isAutoRepeat()) return;
+    if (player->isDigesting) {
+        return;
+    }
+    // ====== 核心修复点：处于 Fatty 状态时，移除对 L 键的拦截 ======
+    if (player->isFatty || player->isSpitting) {
+        // 这里去掉了原本的 || event->key() == Qt::Key_L
+        // 这样变胖时，按下 L 键才不会被中途拦截，能顺利传到底部触发变身
+        if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up ||
+            event->key() == Qt::Key_J || event->key() == Qt::Key_K) {
+            return;
+        }
+    }
+
+    if (player->isSwallowing) {
+        if (event->key() != Qt::Key_L) return;
+    }
+
     keys.insert(event->key());
 
     if (event->key() == Qt::Key_A || event->key() == Qt::Key_Left)
@@ -120,10 +153,38 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         lastHorizontalKey = event->key();
     else if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up)
         jumpBuffer = 6;
-    else if (event->key() == Qt::Key_K)            // 新增翻滚
+    else if (event->key() == Qt::Key_K)
         player->startRoll();
+    // ====== 修改：J键攻击增加蛋糕计时器限制 ======
+    else if (event->key() == Qt::Key_J) {
+        // 核心修改：不仅要满足非动作状态，还要必须满足 player->hasAttackPower()
+        if (!player->isAttacking && !player->isRolling && !player->isSwallowing && !player->isSpitting && player->hasAttackPower()) {
+            player->startAttack();
+            Projectile* proj = new Projectile(player->facingRight);
+            double startX = player->facingRight ? player->x() + 48 : player->x() - 24;
+            double startY = player->y() + 12;
+            proj->setPos(startX, startY);
+            scene->addItem(proj);
+            projectiles.append(proj);
+        }
+    }
+    else if (event->key() == Qt::Key_T) {
+        if (player->isFatty && !player->isSpitting) {
+            player->startSpit();
+        }
+    }
+    // ====== 修改：L键多功能逻辑 ======
+    else if (event->key() == Qt::Key_L) {
+        // 1. 如果是胖子状态，按 L 消化变身
+        if (player->isFatty && !player->isSpitting && !player->isSwallowing) {
+            player->startDigest();
+        }
+        // 2. 如果已经拥有能力（比如火形态），按 L 键解除能力，变回粉色初始形态
+        else if (!player->isFatty && player->currentForm != Enemy::NONE) {
+            player->currentForm = Enemy::NONE;
+        }
+    }
 }
-
 void MainWindow::keyReleaseEvent(QKeyEvent *event) {
     if (event->isAutoRepeat()) return;
     keys.remove(event->key());
@@ -132,6 +193,63 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void MainWindow::gameUpdate() {
+    // ====== 新增：L键长按检测驱动吞噬 ======
+    if (keys.contains(Qt::Key_L) && player->currentForm == Enemy::NONE && player->isOnGround && !player->isFatty && !player->isRolling && !player->isAttacking && !player->isDigesting && !player->isSpitting) {
+        player->startSwallow();
+    } else if ((!keys.contains(Qt::Key_L) || !player->isOnGround) && player->isSwallowing) {
+        player->endSwallow();
+    }
+
+    // ====== 运动状态速度驱动 ======
+    if (player->isRolling) {
+        player->vx = player->facingRight ? Player::rollSpeed : -Player::rollSpeed;
+
+        if (player->rollTimer >= 0) {
+            if (jumpBuffer > 0) {
+                if (player->isOnGround) {
+                    player->vy = -16; coyoteTime = 0; jumpBuffer = 0; player->endRoll();
+                } else if (player->canDoubleJump) {
+                    player->vy = -15; player->canDoubleJump = false; jumpBuffer = 0; player->endRoll();
+                }
+            }
+        } else {
+            jumpBuffer = 0; coyoteTime = 0; player->isHovering = false;
+        }
+    }
+    else if (player->isSwallowing) {
+        player->vx = 0;
+        jumpBuffer = 0; // 核心：吞噬时清除跳跃缓冲，防止吞噬结束后突然起跳
+        coyoteTime = 0; // 核心：清除土狼时间
+    }
+    // ====== 新增：吐出动画播放期间，水平移动物理速度归零 ======
+    else if (player->isSpitting) {
+        player->vx = 0;
+        jumpBuffer = 0;
+        coyoteTime = 0;
+    }
+    // ====== 新增：在播放变身动画期间，物理移动速度、跳跃缓冲全部归零 ======
+    else if (player->isDigesting) {
+        player->vx = 0;
+        jumpBuffer = 0;
+        coyoteTime = 0;
+    }
+    else {
+        // 水平输入（Fatty 状态下正常允许走动）
+        int activeKey = 0;
+        if (keys.contains(lastHorizontalKey)) activeKey = lastHorizontalKey;
+        else {
+            if (keys.contains(Qt::Key_A) || keys.contains(Qt::Key_Left)) activeKey = Qt::Key_A;
+            else if (keys.contains(Qt::Key_D) || keys.contains(Qt::Key_Right)) activeKey = Qt::Key_D;
+        }
+
+        if (activeKey == Qt::Key_A || activeKey == Qt::Key_Left) {
+            player->vx = -5; player->facingRight = false;
+        } else if (activeKey == Qt::Key_D || activeKey == Qt::Key_Right) {
+            player->vx = 5; player->facingRight = true;
+        } else {
+            player->vx = 0;
+        }
+    }
     // ====== 翻滚状态特殊处理 ======
     if (player->isRolling) {
         player->vx = player->facingRight ? Player::rollSpeed : -Player::rollSpeed;
@@ -174,7 +292,14 @@ void MainWindow::gameUpdate() {
         }
     }
 
-    // 2. 重力（原样保留，翻滚时 isHovering=false 故走正常下落分支）
+    // 2. 重力机制拦截
+    if (player->isFatty) {
+        player->isHovering = false; // Fatty 绝对禁止悬浮
+    } else {
+        player->isHovering = (keys.contains(Qt::Key_W) || keys.contains(Qt::Key_Up))
+        && !player->isRolling && !player->isSwallowing;
+    }
+
     if (!player->isOnGround) {
         if (player->isHovering && player->vy > 0) {
             player->vy += 0.1;
@@ -185,8 +310,13 @@ void MainWindow::gameUpdate() {
         }
     }
 
-    // 3. 土狼时间与跳跃缓冲（只有在非翻滚时生效，翻滚时已清零）
-    if (!player->isRolling) {
+    // 3. 土狼时间与跳跃缓冲
+    if (player->isFatty) {
+        // 彻底清洗所有与离地跳跃相关的变量
+        jumpBuffer = 0;
+        coyoteTime = 0;
+        player->canDoubleJump = false;
+    } else if (!player->isRolling && !player->isSwallowing) {
         if (player->isOnGround) {
             coyoteTime = 6;
             player->canDoubleJump = true;
@@ -196,44 +326,36 @@ void MainWindow::gameUpdate() {
 
         if (jumpBuffer > 0) {
             if (coyoteTime > 0) {
-                player->vy = -16;
-                coyoteTime = 0;
-                jumpBuffer = 0;
+                player->vy = -16; coyoteTime = 0; jumpBuffer = 0;
             } else if (player->canDoubleJump) {
-                player->vy = -15;
-                player->canDoubleJump = false;
-                jumpBuffer = 0;
+                player->vy = -15; player->canDoubleJump = false; jumpBuffer = 0;
                 player->currentState = Player::IDLE;
             }
             if (jumpBuffer > 0) jumpBuffer--;
         }
     }
-
-    // 4. 水平移动 + 碰撞（翻滚时的 vx 也会在此处理）
+    // 4. 水平移动 + 碰撞
     player->setPos(player->x() + player->vx, player->y());
-    QRectF pRect = player->sceneBoundingRect();
     const auto &constFloors = floors;
     for (Tile *tile : constFloors) {
         if (player->collidesWithItem(tile)) {
             QRectF tRect = tile->sceneBoundingRect();
             if (player->vx > 0)
-                player->setPos(tRect.left() - pRect.width(), player->y());
+                player->setPos(tRect.left() - 48, player->y()); // 将 pRect.width() 替换为固定的 48
             else if (player->vx < 0)
                 player->setPos(tRect.right(), player->y());
-            pRect = player->sceneBoundingRect();
         }
     }
 
-    // 5. 垂直检测（保持不变）
+    // 5. 垂直检测
     bool onGround = false;
 
     player->setPos(player->x(), player->y() + 1);
-    pRect = player->sceneBoundingRect();
     for (Tile *tile : constFloors) {
         if (player->collidesWithItem(tile)) {
             if (player->vy >= 0) {
                 QRectF tRect = tile->sceneBoundingRect();
-                player->setPos(player->x(), tRect.top() - pRect.height());
+                player->setPos(player->x(), tRect.top() - 48); // 将 pRect.height() 替换为固定的 48
                 player->vy = 0;
                 onGround = true;
             }
@@ -243,23 +365,20 @@ void MainWindow::gameUpdate() {
 
     if (!onGround) {
         player->setPos(player->x(), player->y() - 1 + player->vy);
-        pRect = player->sceneBoundingRect();
         for (Tile *tile : constFloors) {
             if (player->collidesWithItem(tile)) {
                 QRectF tRect = tile->sceneBoundingRect();
                 if (player->vy >= 0) {
-                    player->setPos(player->x(), tRect.top() - pRect.height());
+                    player->setPos(player->x(), tRect.top() - 48); // 将 pRect.height() 替换为固定的 48
                     player->vy = 0;
                     onGround = true;
                 } else {
-                    player->setPos(player->x(), tRect.bottom());
+                    player->setPos(player->x(), tRect.bottom()); // 撞头时，由于逻辑原点在头顶，直接用 bottom 没问题
                     player->vy = 0;
                 }
-                pRect = player->sceneBoundingRect();
             }
         }
     }
-
     player->isOnGround = onGround;
 
     // 6. 翻滚结束判定
@@ -349,5 +468,222 @@ void MainWindow::gameUpdate() {
     for (QGraphicsRectItem* bg : backgroundLayers) {
         qreal bgX = cameraX - bg->rect().width() / 2.0;
         bg->setPos(bgX, 0);
+    }
+    // ====== 子弹逻辑与伤害判定 ======
+    // 逆序遍历，方便在遍历中安全地删除元素
+    for (int i = projectiles.size() - 1; i >= 0; i--) {
+        Projectile* proj = projectiles[i];
+        proj->updateLogic();
+
+        bool hitEnemy = false;
+
+        // 1. 检测是否打到敌人
+        for (int j = enemies.size() - 1; j >= 0; j--) {
+            Enemy* enemy = enemies[j];
+            if (!enemy->isDead && proj->collidesWithItem(enemy)) {
+                // 扣血
+                enemy->takeDamage(proj->damage);
+                hitEnemy = true;
+
+                // 敌人死亡
+                if (enemy->isDead) {
+                    scene->removeItem(enemy);
+                    enemies.removeAt(j);
+                    delete enemy;
+                }
+                break; // 一颗光球只能打一个敌人，打中就退出内层循环
+            }
+        }
+
+        // 2. 检测光球是否寿命耗尽 或 击中了敌人
+        if (hitEnemy || proj->lifeTime <= 0) {
+            scene->removeItem(proj);
+            projectiles.removeAt(i);
+            delete proj;
+        }
+    }
+    // ====== 新增：玩家与敌人碰撞检测 (受击扣血) ======
+    if (player->invulnTimer == 0 && player->hp>0) {
+        for (Enemy* enemy : enemies) {
+            // 只有活着的目标才能对玩家造成伤害
+            if (!enemy->isDead && player->collidesWithItem(enemy)) {
+
+                // 【机制平衡】如果卡比正在翻滚，视为无敌/免伤，不扣血
+                if (player->isRolling) continue;
+
+                // 扣除生命值并给予1秒(60帧)无敌时间
+                player->hp--;
+                player->invulnTimer = 60;
+
+                // 受击效果：给卡比一个微微向上的弹跳击退感
+                player->vy = -6;
+
+                // 检查游戏结束
+                if (player->hp <= 0) {
+                    timer->stop(); // 停止游戏主循环
+                    QMessageBox::critical(this, "Game Over", "卡比没命了！游戏结束！");
+                    this->close(); // 关闭游戏窗口
+                    return;        // 直接返回，防止后续代码报错
+                }
+                break; // 单帧内只承受一次伤害
+            }
+        }
+    }
+
+    // ====== 新增：生命值图标动态固定在屏幕左上角 (HUD) ======
+    qreal screenLeft = cameraX - halfViewW;
+    qreal screenTop = cameraY - view->viewport()->height()/1.2;
+
+    for (int i = 0; i < lifeIcons.size(); ++i) {
+        if (i < player->hp) {
+            lifeIcons[i]->setVisible(true);
+            // 依次排列在屏幕左上角，留出 20 像素边距，每个图标间隔 40 像素
+            lifeIcons[i]->setPos(screenLeft + 20 + i * 40, screenTop + 20);
+        } else {
+            // 命扣掉了就不显示
+            lifeIcons[i]->setVisible(false);
+        }
+    }
+    // ====== 修改后：同时支持吞噬怪物与拉扯蛋糕的吞噬逻辑 ======
+    if (player->isSwallowing) {
+        // 1. 获取卡比 48x48 的物理身体矩形
+        QRectF playerRect(player->x(), player->y(), 48, 48);
+
+        // 2. 建立吸力矩形：起点在卡比身上，往面朝方向延伸 60 像素
+        QRectF swallowWindRect;
+        if (player->facingRight) {
+            swallowWindRect = QRectF(player->x(), player->y(), 48 + 60, 48);
+        } else {
+            swallowWindRect = QRectF(player->x() - 60, player->y(), 60 + 48, 48);
+        }
+
+        // 3. 逆序检查场景中的怪物（拉扯与进肚）
+        for (int j = enemies.size() - 1; j >= 0; j--) {
+            Enemy* enemy = enemies[j];
+            if (!enemy->isDead) {
+                QRectF enemyRect = enemy->sceneBoundingRect();
+
+                // 【怪物阶段一】：触碰身体 -> 真正吸进肚子里
+                if (playerRect.intersects(enemyRect)) {
+                    player->swallowedAbility = enemy->ability; // 记住能力
+                    enemy->isDead = true;
+                    scene->removeItem(enemy);
+                    enemies.removeAt(j);
+                    delete enemy;
+
+                    player->isFatty = true; // 吞到怪物，进入变胖状态
+                    player->endSwallow();
+                    break;
+                }
+                // 【怪物阶段二】：处于吸气范围内 -> 强行拉扯
+                else if (swallowWindRect.intersects(enemyRect)) {
+                    double pullSpeed = 5.5;
+                    if (player->facingRight) {
+                        enemy->setPos(enemy->x() - pullSpeed, enemy->y());
+                    } else {
+                        enemy->setPos(enemy->x() + pullSpeed, enemy->y());
+                    }
+                }
+            }
+        }
+
+        // 4. 【全新添加】：逆序检查场景中的蛋糕（拉扯与进肚）
+        for (int j = cakes.size() - 1; j >= 0; j--) {
+            Cake* cake = cakes[j];
+            QRectF cakeRect = cake->sceneBoundingRect();
+
+            // 【蛋糕阶段一】：蛋糕触碰到了卡比的物理身体 -> 真正吃进肚子
+            if (playerRect.intersects(cakeRect)) {
+                // 赋予卡比 20 秒（1200帧）的攻击能力时效！
+                player->attackPowerTimer = 1200;
+
+                // 从场景中彻底移除并销毁内存
+                scene->removeItem(cake);
+                cakes.removeAt(j);
+                delete cake;
+
+                // 【核心机制】：蛋糕是直接消化的营养品，不进入Fatty状态
+                player->isFatty = false;
+                player->endSwallow(); // 直接结束吸气，恢复常规状态以释放光球
+                break; // 单帧内只吞噬一个蛋糕
+            }
+            // 【蛋糕阶段二】：蛋糕处于吸气范围内 -> 产生无法反抗的拉扯飞行效果
+            else if (swallowWindRect.intersects(cakeRect)) {
+                double pullSpeed = 5.5; // 与吸怪速度保持一致，形成统一的黑洞吸力感
+                if (player->facingRight) {
+                    cake->setPos(cake->x() - pullSpeed, cake->y());
+                } else {
+                    cake->setPos(cake->x() + pullSpeed, cake->y());
+                }
+            }
+        }
+    }
+    // ====== 新增：监听卡比吐出动画的触发帧，生成对应的星星子弹 ======
+    if (player->triggerSpitStar) {
+        player->triggerSpitStar = false; // 消费信号，立即复位
+
+        // 1. 创建高伤害、高速度的星星子弹
+        Projectile* spitStar = new Projectile(player->facingRight);
+        spitStar->damage = 3;
+        spitStar->vx = player->facingRight ? 16 : -16;
+
+        // 2. 根据肚子里怪物的能力，绘制不同颜色的星星
+        QPixmap starPix(32, 32);
+        starPix.fill(Qt::transparent);
+        QPainter painter(&starPix);
+
+        if (player->swallowedAbility == Enemy::FIRE) {
+            painter.setBrush(Qt::red);   // 如果是火系怪，喷出火红的伤害星
+        } else {
+            painter.setBrush(Qt::cyan);  // 普通怪喷出青色星
+        }
+        painter.setPen(Qt::NoPen);
+
+        // 绘制钻石交叉星几何
+        QPolygonF diamond;
+        diamond << QPointF(16, 0) << QPointF(32, 16) << QPointF(16, 32) << QPointF(0, 16);
+        painter.drawPolygon(diamond);
+        painter.end();
+        spitStar->setPixmap(starPix);
+
+        // 3. 将星星精准定位在卡比的嘴部前方
+        double startX = player->facingRight ? player->x() + 48 : player->x() - 32;
+        double startY = player->y() + 8;
+        spitStar->setPos(startX, startY);
+
+        scene->addItem(spitStar);
+        projectiles.append(spitStar);
+
+        // 4. 发射完毕，彻底清洗肚子里的复制能力缓存
+        player->swallowedAbility = Enemy::NONE;
+    }
+    // ====== 新增：吃蛋糕碰撞判定与计时器赋予 ======
+    QRectF playerRect(player->x(), player->y(), 48, 48); // 抓取卡比包围盒
+
+    // ====== 修改后：给蛋糕加上重力与地面碰撞阻挡 ======
+    for (int i = cakes.size() - 1; i >= 0; i--) {
+        Cake* cake = cakes[i];
+        cake->updateLogic(); // 刷新可能存在的每帧逻辑
+
+        // 1. 应用重力 (采用与敌人相同的自由落体算法)
+        cake->vy += 0.8;
+        if (cake->vy > 15) cake->vy = 15; // 终端垂直下落速度限制
+
+        // 2. 垂直方向位移
+        cake->setPos(cake->x(), cake->y() + cake->vy);
+
+        // 3. 地板碰撞检测：防止蛋糕穿模掉出地图
+        QRectF cRect = cake->sceneBoundingRect();
+        for (Tile *tile : floors) {
+            if (cake->collidesWithItem(tile)) {
+                QRectF tRect = tile->sceneBoundingRect();
+                if (cake->vy > 0) { // 只有在向下掉落时踩到地板才触发阻挡
+                    // 将蛋糕的底部精准贴在方块的上边缘
+                    cake->setPos(cake->x(), tRect.top() - cRect.height());
+                    cake->vy = 0; // 落地后垂直速度清零，停止下落
+                }
+                break; // 踩到一块地板后就跳出当前的碰撞检查
+            }
+        }
     }
 }

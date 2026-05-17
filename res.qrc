@@ -14,5 +14,17 @@
         <file>tu/Clouds 1/4.png</file>
         <file>tu/ice.png</file>
         <file>tu/fire_enemy.png</file>
+        <file>tu/normal-attack.png</file>
+        <file>tu/life.png</file>
+        <file>tu/fatty_daiji.png</file>
+        <file>tu/fatty_walk.png</file>
+        <file>tu/kirby_swallow.png</file>
+        <file>tu/kirby_tuchu.png</file>
+        <file>tu/cake.png</file>
+        <file>tu/fire_daiji.png</file>
+        <file>tu/fire_fly.png</file>
+        <file>tu/fire_walk.png</file>
+        <file>tu/kirby_digest.png</file>
+        <file>tu/fire_fangun.png</file>
     </qresource>
 </RCC>

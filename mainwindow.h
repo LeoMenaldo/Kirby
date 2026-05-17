@@ -6,10 +6,13 @@
 #include <QGraphicsView>
 #include <QTimer>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <QSet>
 #include "player.h"
 #include "tile.h"
 #include "enemy.h"
+#include "projectile.h"
+#include "cake.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -29,6 +32,7 @@ private slots:
     void gameUpdate();
 
 private:
+    QList<QGraphicsPixmapItem*> lifeIcons; // 存放生命值图标的列表
     void loadLevel(int level);
     Ui::MainWindow *ui;
     QGraphicsScene *scene;
@@ -42,6 +46,8 @@ private:
     int jumpBuffer = 0;
     int coyoteTime = 0;
     QList<Enemy*> enemies;
+    QList<Projectile*> projectiles;
+    QList<Cake*> cakes;
 };
 
 #endif // MAINWINDOW_H
