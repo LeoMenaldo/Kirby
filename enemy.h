@@ -7,11 +7,12 @@ class Enemy : public GameObject {
 public:
     // 定义一个枚举，列出游戏中所有的复制能力
     enum CopyAbility {
-        NONE,   // 无能力（比如普通的瓦豆鲁迪）
-        FIRE,   // 火能力
-        WATER,  // 水能力
-        ICE,    // 冰能力
-        SPARK   // 电能力
+        NONE,       // 无能力（比如普通的瓦豆鲁迪）
+        FIRE,       // 火能力
+        WATER,      // 水能力
+        ICE,        // 冰能力
+        SPARK,      // 电能力
+        LEAF        // 叶能力
     };
     virtual void reverseDirection() {}
     Enemy();

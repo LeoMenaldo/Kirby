@@ -14,6 +14,7 @@
         <file>tu/Clouds 1/4.png</file>
         <file>tu/ice.png</file>
         <file>tu/fire_enemy.png</file>
+        <file>tu/Fire_Dude.png</file>
         <file>tu/normal-attack.png</file>
         <file>tu/life.png</file>
         <file>tu/fatty_daiji.png</file>
@@ -26,5 +27,24 @@
         <file>tu/fire_walk.png</file>
         <file>tu/kirby_digest.png</file>
         <file>tu/fire_fangun.png</file>
+        <file>tu/firesucai.png</file>
+        <file>tu/Ice_Dude.png</file>
+        <file>tu/Leaf_Dude.png</file>
+        <file>tu/Lightning_Dude.png</file>
+        <file>tu/ice_daiji.png</file>
+        <file>tu/ice_walk.png</file>
+        <file>tu/ice_fly.png</file>
+        <file>tu/ice_fangun.png</file>
+        <file>tu/ice_sucai.png</file>
+        <file>tu/leaf_daiji.png</file>
+        <file>tu/leaf_walk.png</file>
+        <file>tu/leaf_fly.png</file>
+        <file>tu/leaf_fangun.png</file>
+        <file>tu/leaf_sucai.png</file>
+        <file>tu/lightning_daiji.png</file>
+        <file>tu/lightning_walk.png</file>
+        <file>tu/lightning_fly.png</file>
+        <file>tu/lightning_fangun.png</file>
+        <file>tu/lightning_sucai.png</file>
     </qresource>
 </RCC>

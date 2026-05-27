@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "basicenemy.h"
+#include <QPainter>
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -96,14 +97,29 @@ MainWindow::MainWindow(QWidget *parent)
     player->setPos(100, 500); // 调整初始高度到地面附近
     scene->addItem(player);
     //生成敌人！
-        // 传入参数："图片路径", 帧数(你的图是5帧), 速度, 能力标签(FIRE)
     BasicEnemy* fireEnemy = new BasicEnemy(":/tu/fire_enemy.png", 5, 1.5, Enemy::FIRE);
     fireEnemy->setScale(2);
-    fireEnemy->setPos(400, 500); // 把它放在卡比右边一点的位置
+    fireEnemy->setPos(400, 500);
     scene->addItem(fireEnemy);
-    // （重要）你需要把生成的敌人存起来，以便在 gameUpdate 里让它们移动和检测碰撞
-    // 记得在 mainwindow.h 里加一个 QList<Enemy*> enemies;
     enemies.append(fireEnemy);
+
+    BasicEnemy* iceEnemy = new BasicEnemy(":/tu/Ice_Dude.png", 6, 1.2, Enemy::ICE);
+    iceEnemy->setScale(2);
+    iceEnemy->setPos(700, 500);
+    scene->addItem(iceEnemy);
+    enemies.append(iceEnemy);
+
+    BasicEnemy* leafEnemy = new BasicEnemy(":/tu/Leaf_Dude.png", 8, 1.0, Enemy::LEAF);
+    leafEnemy->setScale(2);
+    leafEnemy->setPos(1000, 500);
+    scene->addItem(leafEnemy);
+    enemies.append(leafEnemy);
+
+    BasicEnemy* lightningEnemy = new BasicEnemy(":/tu/Lightning_Dude.png", 6, 1.8, Enemy::SPARK);
+    lightningEnemy->setScale(2);
+    lightningEnemy->setPos(1300, 500);
+    scene->addItem(lightningEnemy);
+    enemies.append(lightningEnemy);
     // 6. 游戏循环
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &MainWindow::gameUpdate);
@@ -155,17 +171,62 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         jumpBuffer = 6;
     else if (event->key() == Qt::Key_K)
         player->startRoll();
-    // ====== 修改：J键攻击增加蛋糕计时器限制 ======
+    // ====== J键攻击——四形态天生攻击，普通形态需蛋糕 ======
     else if (event->key() == Qt::Key_J) {
-        // 核心修改：不仅要满足非动作状态，还要必须满足 player->hasAttackPower()
-        if (!player->isAttacking && !player->isRolling && !player->isSwallowing && !player->isSpitting && player->hasAttackPower()) {
+        bool canAttack = !player->isAttacking && !player->isRolling && !player->isSwallowing && !player->isSpitting;
+        if (!canAttack) return;
+
+        Enemy::CopyAbility form = player->currentForm;
+
+        if (form == Enemy::FIRE || form == Enemy::ICE || form == Enemy::LEAF || form == Enemy::SPARK) {
+            // 四形态：天生攻击能力，不需要吃蛋糕
             player->startAttack();
+
+            // 根据形态选择弹丸颜色
+            QColor outerColor, innerColor;
+            if (form == Enemy::FIRE) {
+                outerColor = QColor(255, 80, 0);
+                innerColor = QColor(255, 200, 50);
+            } else if (form == Enemy::ICE) {
+                outerColor = QColor(30, 120, 255);
+                innerColor = QColor(180, 220, 255);
+            } else if (form == Enemy::LEAF) {
+                outerColor = QColor(30, 180, 60);
+                innerColor = QColor(150, 255, 150);
+            } else { // SPARK
+                outerColor = QColor(255, 200, 30);
+                innerColor = QColor(255, 255, 180);
+            }
+
             Projectile* proj = new Projectile(player->facingRight);
+            proj->damage = 2;
+            QPixmap pix(24, 24);
+            pix.fill(Qt::transparent);
+            QPainter painter(&pix);
+            painter.setBrush(outerColor);
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(0, 0, 24, 24);
+            painter.setBrush(innerColor);
+            painter.drawEllipse(4, 4, 16, 16);
+            painter.end();
+            proj->setPixmap(pix);
             double startX = player->facingRight ? player->x() + 48 : player->x() - 24;
             double startY = player->y() + 12;
             proj->setPos(startX, startY);
             scene->addItem(proj);
             projectiles.append(proj);
+
+        } else {
+            // 普通形态：必须吃蛋糕才有攻击能力
+            if (player->hasAttackPower()) {
+                player->startAttack();
+                Projectile* proj = new Projectile(player->facingRight);
+                double startX = player->facingRight ? player->x() + 48 : player->x() - 24;
+                double startY = player->y() + 12;
+                proj->setPos(startX, startY);
+                scene->addItem(proj);
+                projectiles.append(proj);
+            }
         }
     }
     else if (event->key() == Qt::Key_T) {
@@ -173,15 +234,15 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
             player->startSpit();
         }
     }
-    // ====== 修改：L键多功能逻辑 ======
+    // ====== L键多功能逻辑 ======
     else if (event->key() == Qt::Key_L) {
         // 1. 如果是胖子状态，按 L 消化变身
         if (player->isFatty && !player->isSpitting && !player->isSwallowing) {
             player->startDigest();
         }
-        // 2. 如果已经拥有能力（比如火形态），按 L 键解除能力，变回粉色初始形态
-        else if (!player->isFatty && player->currentForm != Enemy::NONE) {
-            player->currentForm = Enemy::NONE;
+        // 2. 如果已拥有形态能力，启动长按计时器（需按住1秒才取消，防误触）
+        else if (!player->isFatty && player->currentForm != Enemy::NONE && player->formCancelTimer == 0) {
+            player->formCancelTimer = 1;
         }
     }
 }
@@ -193,11 +254,24 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void MainWindow::gameUpdate() {
-    // ====== 新增：L键长按检测驱动吞噬 ======
+    // ====== L键长按：吞噬 vs 取消形态 ======
     if (keys.contains(Qt::Key_L) && player->currentForm == Enemy::NONE && player->isOnGround && !player->isFatty && !player->isRolling && !player->isAttacking && !player->isDigesting && !player->isSpitting) {
         player->startSwallow();
     } else if ((!keys.contains(Qt::Key_L) || !player->isOnGround) && player->isSwallowing) {
         player->endSwallow();
+    }
+
+    // 长按L取消形态（需持续按住60帧=1秒，松手即重置）
+    if (player->formCancelTimer > 0) {
+        if (keys.contains(Qt::Key_L)) {
+            player->formCancelTimer++;
+            if (player->formCancelTimer >= 60) {
+                player->currentForm = Enemy::NONE;
+                player->formCancelTimer = 0;
+            }
+        } else {
+            player->formCancelTimer = 0; // 松手就重置，防误触
+        }
     }
 
     // ====== 运动状态速度驱动 ======
@@ -274,8 +348,8 @@ void MainWindow::gameUpdate() {
             coyoteTime = 0;
             player->isHovering = false;
         }
-    } else {
-        // 1. 水平输入（原有逻辑）
+    } else if (!player->isSwallowing && !player->isSpitting && !player->isDigesting) {
+        // 1. 水平输入（原有逻辑）—— 吞噬/吐出/变身时跳过，防止覆盖第一段运动逻辑的vx=0
         int activeKey = 0;
         if (keys.contains(lastHorizontalKey)) activeKey = lastHorizontalKey;
         else {
@@ -508,8 +582,9 @@ void MainWindow::gameUpdate() {
             // 只有活着的目标才能对玩家造成伤害
             if (!enemy->isDead && player->collidesWithItem(enemy)) {
 
-                // 【机制平衡】如果卡比正在翻滚，视为无敌/免伤，不扣血
+                // 【机制平衡】如果卡比正在翻滚或吞噬，视为无敌/免伤，不扣血
                 if (player->isRolling) continue;
+                if (player->isSwallowing) continue;
 
                 // 扣除生命值并给予1秒(60帧)无敌时间
                 player->hp--;
