@@ -10,6 +10,15 @@ class Player : public GameObject {
 public:
     enum State { IDLE, WALKING, JUMPING, ROLLING, ATTACKING, SWALLOWING, FATTY_IDLE, FATTY_WALKING, SPITTING, DIGESTING };
 
+    // 元素属性（预留用于和场景物品交互：如火融冰、电导水等）
+    enum Element {
+        ELEM_NONE = 0,
+        ELEM_FIRE = 1,
+        ELEM_ICE  = 2,
+        ELEM_LEAF = 3,
+        ELEM_SPARK = 4
+    };
+
     static constexpr double rollSpeed = 8;         // 翻滚时的水平速度
 
     Player();
@@ -45,6 +54,19 @@ public:
     bool isDigesting = false;                         // 是否正在播放消化变身动画
     Enemy::CopyAbility currentForm = Enemy::NONE;     // 核心：当前卡比持有的形态能力（预留后续扩展空间）
 
+    // 获取当前形态对应的元素属性
+    Element currentElement() const {
+        switch (currentForm) {
+            case Enemy::FIRE:  return ELEM_FIRE;
+            case Enemy::ICE:   return ELEM_ICE;
+            case Enemy::LEAF:  return ELEM_LEAF;
+            case Enemy::SPARK: return ELEM_SPARK;
+            default:           return ELEM_NONE;
+        }
+    }
+
+    int formCancelTimer = 0;  // 长按L取消形态的计时器（60帧=1秒）
+
 private:
     int currentFrame = 0;
     int animTimer = 0;
@@ -67,6 +89,22 @@ private:
     QVector<QPixmap> fireWalkFrames;  // 火形态走路
     QVector<QPixmap> fireJumpFrames;  // 火形态飞行跳跃
     QVector<QPixmap> fireRollFrames;
+    QVector<QPixmap> fireAttackFrames;  // 火形态攻击动画
+    QVector<QPixmap> iceIdleFrames;     // 冰形态待机
+    QVector<QPixmap> iceWalkFrames;     // 冰形态走路
+    QVector<QPixmap> iceJumpFrames;     // 冰形态飞行跳跃
+    QVector<QPixmap> iceRollFrames;
+    QVector<QPixmap> iceAttackFrames;   // 冰形态攻击动画
+    QVector<QPixmap> leafIdleFrames;    // 叶形态待机
+    QVector<QPixmap> leafWalkFrames;    // 叶形态走路
+    QVector<QPixmap> leafJumpFrames;    // 叶形态飞行跳跃
+    QVector<QPixmap> leafRollFrames;
+    QVector<QPixmap> leafAttackFrames;  // 叶形态攻击动画
+    QVector<QPixmap> lightningIdleFrames;   // 电形态待机
+    QVector<QPixmap> lightningWalkFrames;   // 电形态走路
+    QVector<QPixmap> lightningJumpFrames;   // 电形态飞行跳跃
+    QVector<QPixmap> lightningRollFrames;
+    QVector<QPixmap> lightningAttackFrames; // 电形态攻击动画
 };
 
 #endif // PLAYER_H

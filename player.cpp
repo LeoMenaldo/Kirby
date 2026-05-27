@@ -130,6 +130,67 @@ Player::Player() {
             fireRollFrames.push_back(fireRollSheet.copy(i * fh, 0, fh, fh));
         }
     }
+
+    // 火形态：攻击动画加载 (firesucai.png, 垂直排列8帧, 每帧472x172)
+    QPixmap fireAttackSheet(":/tu/firesucai.png");
+    if (!fireAttackSheet.isNull()) {
+        int fh = 172;
+        int fw = fireAttackSheet.width();
+        int count = fireAttackSheet.height() / fh;
+        for (int i = 0; i < count; i++) {
+            fireAttackFrames.push_back(fireAttackSheet.copy(0, i * fh, fw, fh));
+        }
+    }
+
+    // ====== 冰形态素材加载 ======
+    auto loadFormSprites = [](QString prefix, QVector<QPixmap>& idle, QVector<QPixmap>& walk,
+                               QVector<QPixmap>& jump, QVector<QPixmap>& roll, QVector<QPixmap>& attack) {
+        // 待机
+        QPixmap idleSheet(":/tu/" + prefix + "_daiji.png");
+        if (!idleSheet.isNull()) {
+            int fh = idleSheet.height();
+            int count = idleSheet.width() / fh;
+            for (int i = 0; i < count; i++)
+                idle.push_back(idleSheet.copy(i * fh, 0, fh, fh));
+        }
+        // 走路
+        QPixmap walkSheet(":/tu/" + prefix + "_walk.png");
+        if (!walkSheet.isNull()) {
+            int fh = walkSheet.height();
+            int count = walkSheet.width() / fh;
+            for (int i = 0; i < count; i++)
+                walk.push_back(walkSheet.copy(i * fh, 0, fh, fh));
+        }
+        // 飞行/跳跃
+        QPixmap flySheet(":/tu/" + prefix + "_fly.png");
+        if (!flySheet.isNull()) {
+            int fh = flySheet.height();
+            int count = flySheet.width() / fh;
+            for (int i = 0; i < count; i++)
+                jump.push_back(flySheet.copy(i * fh, 0, fh, fh));
+        }
+        // 翻滚
+        QPixmap rollSheet(":/tu/" + prefix + "_fangun.png");
+        if (!rollSheet.isNull()) {
+            int fh = rollSheet.height();
+            int count = rollSheet.width() / fh;
+            for (int i = 0; i < count; i++)
+                roll.push_back(rollSheet.copy(i * fh, 0, fh, fh));
+        }
+        // 攻击
+        QPixmap attackSheet(":/tu/" + prefix + "_sucai.png");
+        if (!attackSheet.isNull()) {
+            int fh = 172;
+            int fw = attackSheet.width();
+            int count = attackSheet.height() / fh;
+            for (int i = 0; i < count; i++)
+                attack.push_back(attackSheet.copy(0, i * fh, fw, fh));
+        }
+    };
+
+    loadFormSprites("ice", iceIdleFrames, iceWalkFrames, iceJumpFrames, iceRollFrames, iceAttackFrames);
+    loadFormSprites("leaf", leafIdleFrames, leafWalkFrames, leafJumpFrames, leafRollFrames, leafAttackFrames);
+    loadFormSprites("lightning", lightningIdleFrames, lightningWalkFrames, lightningJumpFrames, lightningRollFrames, lightningAttackFrames);
 }
 
 void Player::setState(State newState) {
@@ -143,18 +204,23 @@ void Player::setState(State newState) {
 void Player::startRoll() {
     if (isRolling) return;
 
-    // 动态获取当前形态对应的翻滚总帧数
-    int frameCount = (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) ? fireRollFrames.size() : rollFrames.size();
+    // 根据形态选择翻滚帧
+    QVector<QPixmap>* activeRollFrames = &rollFrames;
+    if (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) activeRollFrames = &fireRollFrames;
+    else if (currentForm == Enemy::ICE && !iceRollFrames.isEmpty()) activeRollFrames = &iceRollFrames;
+    else if (currentForm == Enemy::LEAF && !leafRollFrames.isEmpty()) activeRollFrames = &leafRollFrames;
+    else if (currentForm == Enemy::SPARK && !lightningRollFrames.isEmpty()) activeRollFrames = &lightningRollFrames;
+
+    int frameCount = activeRollFrames->size();
     if (frameCount == 0) return;
 
     isRolling = true;
     setState(ROLLING);
-    rollTimer = frameCount * 2; // 根据形态的帧数动态决定翻滚持续时长
+    rollTimer = frameCount * 2;
     rollCurrentFrame = 0;
     rollAnimTimer = 0;
 
-    // 绘制第一帧
-    QPixmap img = (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) ? fireRollFrames[0] : rollFrames[0];
+    QPixmap img = (*activeRollFrames)[0];
     if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
     setOffset((48 - img.width()) / 2.0, 48 - img.height());
     setPixmap(img);
@@ -286,18 +352,26 @@ void Player::updateLogic() {
         return;
     }
 
-    // 攻击中
+    // 攻击中（支持四形态）
     if (isAttacking) {
         if (isOnGround) vx = 0;
+
+        // 根据形态选择对应的攻击动画帧
+        QVector<QPixmap>* activeAttackFrames = &attackFrames;
+        if (currentForm == Enemy::FIRE && !fireAttackFrames.isEmpty()) activeAttackFrames = &fireAttackFrames;
+        else if (currentForm == Enemy::ICE && !iceAttackFrames.isEmpty()) activeAttackFrames = &iceAttackFrames;
+        else if (currentForm == Enemy::LEAF && !leafAttackFrames.isEmpty()) activeAttackFrames = &leafAttackFrames;
+        else if (currentForm == Enemy::SPARK && !lightningAttackFrames.isEmpty()) activeAttackFrames = &lightningAttackFrames;
+
         attackAnimTimer++;
         if (attackAnimTimer >= 3) {
             attackAnimTimer = 0;
             attackCurrentFrame++;
-            if (attackCurrentFrame >= attackFrames.size()) {
+            if (attackCurrentFrame >= activeAttackFrames->size()) {
                 endAttack();
                 return;
             }
-            QPixmap img = attackFrames[attackCurrentFrame];
+            QPixmap img = (*activeAttackFrames)[attackCurrentFrame];
             if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
             setOffset((48 - img.width()) / 2.0, 48 - img.height());
             setPixmap(img);
@@ -305,22 +379,26 @@ void Player::updateLogic() {
         return;
     }
 
-    // ====== 修改：翻滚中（支持形态动态切换） ======
+    // ====== 修改：翻滚中（支持四形态动态切换） ======
     if (isRolling) {
         rollAnimTimer++;
         if (rollAnimTimer >= 2) {
             rollAnimTimer = 0;
             rollCurrentFrame++;
 
-            // 动态判断当前形态的帧数上限
-            int frameCount = (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) ? fireRollFrames.size() : rollFrames.size();
+            // 根据形态选择翻滚帧
+            QVector<QPixmap>* activeRollFrames = &rollFrames;
+            if (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) activeRollFrames = &fireRollFrames;
+            else if (currentForm == Enemy::ICE && !iceRollFrames.isEmpty()) activeRollFrames = &iceRollFrames;
+            else if (currentForm == Enemy::LEAF && !leafRollFrames.isEmpty()) activeRollFrames = &leafRollFrames;
+            else if (currentForm == Enemy::SPARK && !lightningRollFrames.isEmpty()) activeRollFrames = &lightningRollFrames;
 
+            int frameCount = activeRollFrames->size();
             if (rollCurrentFrame >= frameCount) {
-                rollCurrentFrame = frameCount - 1; // 停留在最后一帧
+                rollCurrentFrame = frameCount - 1;
             }
 
-            // 根据形态选取对应帧
-            QPixmap img = (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) ? fireRollFrames[rollCurrentFrame] : rollFrames[rollCurrentFrame];
+            QPixmap img = (*activeRollFrames)[rollCurrentFrame];
             if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
             setOffset((48 - img.width()) / 2.0, 48 - img.height());
             setPixmap(img);
@@ -349,53 +427,50 @@ void Player::updateLogic() {
 
         QPixmap currentImage;
         switch (currentState) {
-        case JUMPING:
-            // ====== 核心修改点：预留形态分支逻辑 ======
-            if (currentForm == Enemy::FIRE) {
-                if (!fireJumpFrames.isEmpty()) {
-                    if (currentFrame >= fireJumpFrames.size()) currentFrame = 0;
-                    currentImage = fireJumpFrames[currentFrame];
-                }
-            } else {
-                // 原有的普通形态飞行
-                if (!jumpFrames.isEmpty()) {
-                    if (currentFrame <= 6) currentFrame = 6;
-                    if (currentFrame >= 15) currentFrame = 6;
-                    int safeFrame = currentFrame;
-                    if (safeFrame >= jumpFrames.size()) safeFrame = jumpFrames.size() - 1;
-                    currentImage = jumpFrames[safeFrame];
-                }
+        case JUMPING: {
+            // 形态分支：跳跃/飞行动画
+            QVector<QPixmap>* frames = &jumpFrames;
+            if (currentForm == Enemy::FIRE && !fireJumpFrames.isEmpty()) frames = &fireJumpFrames;
+            else if (currentForm == Enemy::ICE && !iceJumpFrames.isEmpty()) frames = &iceJumpFrames;
+            else if (currentForm == Enemy::LEAF && !leafJumpFrames.isEmpty()) frames = &leafJumpFrames;
+            else if (currentForm == Enemy::SPARK && !lightningJumpFrames.isEmpty()) frames = &lightningJumpFrames;
+
+            if (!frames->isEmpty()) {
+                if (currentFrame <= 6) currentFrame = 6;
+                if (currentFrame >= 15) currentFrame = 6;
+                int safeFrame = currentFrame;
+                if (safeFrame >= frames->size()) safeFrame = frames->size() - 1;
+                currentImage = (*frames)[safeFrame];
             }
             break;
-        case WALKING:
-            if (currentForm == Enemy::FIRE) {
-                if (!fireWalkFrames.isEmpty()) {
-                    if (currentFrame >= fireWalkFrames.size()) currentFrame = 0;
-                    currentImage = fireWalkFrames[currentFrame];
-                }
-            } else {
-                // 原有的普通走路
-                if (!walkFrames.isEmpty()) {
-                    if (currentFrame >= walkFrames.size()) currentFrame = 0;
-                    currentImage = walkFrames[currentFrame];
-                }
+        }
+        case WALKING: {
+            QVector<QPixmap>* frames = &walkFrames;
+            if (currentForm == Enemy::FIRE && !fireWalkFrames.isEmpty()) frames = &fireWalkFrames;
+            else if (currentForm == Enemy::ICE && !iceWalkFrames.isEmpty()) frames = &iceWalkFrames;
+            else if (currentForm == Enemy::LEAF && !leafWalkFrames.isEmpty()) frames = &leafWalkFrames;
+            else if (currentForm == Enemy::SPARK && !lightningWalkFrames.isEmpty()) frames = &lightningWalkFrames;
+
+            if (!frames->isEmpty()) {
+                if (currentFrame >= frames->size()) currentFrame = 0;
+                currentImage = (*frames)[currentFrame];
             }
             break;
+        }
         case IDLE:
-        default:
-            if (currentForm == Enemy::FIRE) {
-                if (!fireIdleFrames.isEmpty()) {
-                    if (currentFrame >= fireIdleFrames.size()) currentFrame = 0;
-                    currentImage = fireIdleFrames[currentFrame];
-                }
-            } else {
-                // 原有的普通待机
-                if (!idleFrames.isEmpty()) {
-                    if (currentFrame >= idleFrames.size()) currentFrame = 0;
-                    currentImage = idleFrames[currentFrame];
-                }
+        default: {
+            QVector<QPixmap>* frames = &idleFrames;
+            if (currentForm == Enemy::FIRE && !fireIdleFrames.isEmpty()) frames = &fireIdleFrames;
+            else if (currentForm == Enemy::ICE && !iceIdleFrames.isEmpty()) frames = &iceIdleFrames;
+            else if (currentForm == Enemy::LEAF && !leafIdleFrames.isEmpty()) frames = &leafIdleFrames;
+            else if (currentForm == Enemy::SPARK && !lightningIdleFrames.isEmpty()) frames = &lightningIdleFrames;
+
+            if (!frames->isEmpty()) {
+                if (currentFrame >= frames->size()) currentFrame = 0;
+                currentImage = (*frames)[currentFrame];
             }
             break;
+        }
         }
 
         if (!facingRight && !currentImage.isNull())
@@ -413,7 +488,14 @@ QPainterPath Player::shape() const {
     return path;
 }
 void Player::startAttack() {
-    if (isAttacking || isRolling || attackFrames.isEmpty()) return; // 翻滚时不能攻击
+    // 根据当前形态选择对应的攻击动画帧
+    QVector<QPixmap>* activeAttackFrames = &attackFrames;
+    if (currentForm == Enemy::FIRE && !fireAttackFrames.isEmpty()) activeAttackFrames = &fireAttackFrames;
+    else if (currentForm == Enemy::ICE && !iceAttackFrames.isEmpty()) activeAttackFrames = &iceAttackFrames;
+    else if (currentForm == Enemy::LEAF && !leafAttackFrames.isEmpty()) activeAttackFrames = &leafAttackFrames;
+    else if (currentForm == Enemy::SPARK && !lightningAttackFrames.isEmpty()) activeAttackFrames = &lightningAttackFrames;
+
+    if (isAttacking || isRolling || activeAttackFrames->isEmpty()) return;
 
     isAttacking = true;
     setState(ATTACKING);
@@ -421,7 +503,7 @@ void Player::startAttack() {
     attackAnimTimer = 0;
 
     // 播放第一帧
-    QPixmap img = attackFrames[0];
+    QPixmap img = (*activeAttackFrames)[0];
     if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
     setOffset((48 - img.width()) / 2.0, 48 - img.height());
     setPixmap(img);

@@ -5,14 +5,18 @@ BasicEnemy::BasicEnemy(QString spritePath, int frames, double speed, CopyAbility
     // 1. 把传进来的能力标签存到基类的 ability 变量中
     this->ability = ab;
 
-    // 2. 加载对应的精灵图
+    // 2. 加载对应的精灵图（自适应帧大小：帧高度=图片高度，帧宽度=高度）
     QPixmap spriteSheet(spritePath);
-    int frameSize = 48;
+    int frameSize = spriteSheet.height(); // 自适应高度，支持16px/48px等不同尺寸
 
-    // 为了防止图片不存在导致崩溃，加个安全校验
-    if (!spriteSheet.isNull()) {
+    if (!spriteSheet.isNull() && frameSize > 0) {
         for (int i = 0; i < frames; i++) {
-            walkFrames.push_back(spriteSheet.copy(i * frameSize, 0, frameSize, frameSize));
+            QPixmap frame = spriteSheet.copy(i * frameSize, 0, frameSize, frameSize);
+            // 如果原始帧尺寸不是48x48，缩放到48x48以统一碰撞体积
+            if (frameSize != 48) {
+                frame = frame.scaled(48, 48, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            }
+            walkFrames.push_back(frame);
         }
         if (!walkFrames.isEmpty()) {
             setPixmap(walkFrames[0]);
@@ -23,6 +27,7 @@ BasicEnemy::BasicEnemy(QString spritePath, int frames, double speed, CopyAbility
     walkSpeed = speed;
     vx = -walkSpeed;
 }
+
 void BasicEnemy::updateLogic() {
     if (isDead) return;
 
