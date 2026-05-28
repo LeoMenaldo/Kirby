@@ -1,5 +1,5 @@
 # 基础模块
-QT       += core gui widgets
+QT       += core gui widgets multimedia
 
 # 包含你的所有代码文件
 SOURCES += \

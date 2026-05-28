@@ -94,30 +94,34 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 5. 卡比
     player = new Player();
-    player->setPos(100, 500); // 调整初始高度到地面附近
+    player->setPos(800, 904);
     scene->addItem(player);
     //生成敌人！
     BasicEnemy* fireEnemy = new BasicEnemy(":/tu/fire_enemy.png", 5, 1.5, Enemy::FIRE);
     fireEnemy->setScale(2);
     fireEnemy->setPos(400, 500);
+    fireEnemy->setVisible(false);
     scene->addItem(fireEnemy);
     enemies.append(fireEnemy);
 
     BasicEnemy* iceEnemy = new BasicEnemy(":/tu/Ice_Dude.png", 6, 1.2, Enemy::ICE);
     iceEnemy->setScale(2);
     iceEnemy->setPos(700, 500);
+    iceEnemy->setVisible(false);
     scene->addItem(iceEnemy);
     enemies.append(iceEnemy);
 
     BasicEnemy* leafEnemy = new BasicEnemy(":/tu/Leaf_Dude.png", 8, 1.0, Enemy::LEAF);
     leafEnemy->setScale(2);
     leafEnemy->setPos(1000, 500);
+    leafEnemy->setVisible(false);
     scene->addItem(leafEnemy);
     enemies.append(leafEnemy);
 
     BasicEnemy* lightningEnemy = new BasicEnemy(":/tu/Lightning_Dude.png", 6, 1.8, Enemy::SPARK);
     lightningEnemy->setScale(2);
     lightningEnemy->setPos(1300, 500);
+    lightningEnemy->setVisible(false);
     scene->addItem(lightningEnemy);
     enemies.append(lightningEnemy);
     // 6. 游戏循环
@@ -130,19 +134,59 @@ MainWindow::MainWindow(QWidget *parent)
         QGraphicsPixmapItem* icon = new QGraphicsPixmapItem(lifePix);
         icon->setZValue(1000); // 确保图层在最上方，不被背景或地图遮挡
         icon->setScale(2.0);   // 如果图片太小，可以像这样放大2倍显示
+        icon->setVisible(false);
         scene->addItem(icon);
         lifeIcons.append(icon);
     }
     // ====== 新增：在场景中生成一个测试蛋糕 ======
     Cake* testCake = new Cake();
     testCake->setPos(250, 600);
+    testCake->setVisible(false);
     scene->addItem(testCake);
     cakes.append(testCake);
+    titleText = new QGraphicsTextItem("星之卡比");
+    titleText->setFont(QFont("SimHei", 48, QFont::Bold));
+    titleText->setDefaultTextColor(Qt::white);
+    titleText->setZValue(2000);
+    titleText->setPos(380, 650); // 回到屏幕中央上方
+    scene->addItem(titleText);
+
+    hintText = new QGraphicsTextItem("- 按ENTER开始游戏 -");
+    hintText->setFont(QFont("SimHei", 20, QFont::Bold));
+    hintText->setDefaultTextColor(Qt::yellow);
+    hintText->setZValue(2000);
+    hintText->setPos(380, 780);  // 回到屏幕中央下方
+    scene->addItem(hintText);
+
+    // 音乐
+    bgmPlayer = new QMediaPlayer(this);
+    audioOutput = new QAudioOutput(this);
+    bgmPlayer->setAudioOutput(audioOutput);
+    bgmPlayer->setSource(QUrl("qrc:///tu/kerby theme music.mp3"));
+    audioOutput->setVolume(0.5); // 音量范围 0.0 到 1.0
+    bgmPlayer->setLoops(QMediaPlayer::Infinite); // 无限循环
+    bgmPlayer->play();
+
+    // 6. 游戏循环
+    timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, &MainWindow::gameUpdate);
     timer->start(16);
 }
 MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::keyPressEvent(QKeyEvent *event) {
+    if (currentState == START_SCREEN) {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+            enterPressed = true;
+            /*currentState = INTRO_PAN;
+            if (titleText) { scene->removeItem(titleText); delete titleText; titleText = nullptr; }
+            if (hintText) { scene->removeItem(hintText); delete hintText; hintText = nullptr; }*/
+        }
+        return;
+    }
+
+    if (currentState == INTRO_PAN) return; // 动画期间拦截所有按键
+
     if (event->isAutoRepeat()) return;
     if (player->isDigesting) {
         return;
@@ -254,6 +298,127 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void MainWindow::gameUpdate() {
+    // 阶段一：静止的开始界面
+    if (currentState == START_SCREEN) {
+        if (enterPressed) {
+            player->vx = 0; // 左右停住，不让它乱跑
+
+            // 物理系统会自动让它下落，一旦碰撞检测判定它踩地了
+            if (player->isOnGround) {
+                enterPressed = false;      // 重置标记
+                if (titleText) { scene->removeItem(titleText); delete titleText; titleText = nullptr; }
+                if (hintText) { scene->removeItem(hintText); delete hintText; hintText = nullptr; }
+                currentState = INTRO_PAN;     // 【关键】此时才真正切换到屏幕滑动状态
+            }
+        }
+        // 情况 B：正常挂机状态，卡比随节拍随机乱动
+        else {
+            aiTimer++;
+
+            // 【节奏感核心】：假设游戏 60帧/秒，每 45 帧（约0.75秒，类似一个节拍）改变一次动作
+            if (aiTimer % 26 == 0) {
+                player->isRolling = false;
+                int randNum = rand() % 100;
+
+                if (randNum < 20) {
+                    // 20% 概率向左走
+                    player->vx = -3;
+                    player->facingRight = false;
+                }
+                else if (randNum < 40) {
+                    // 20% 概率向右走
+                    player->vx = 3;
+                    player->facingRight = true;
+                }
+                else if (randNum < 70) {
+                    // 30% 概率跳跃
+                    if (player->isOnGround) {
+                        player->vy = -16;
+                        player->isOnGround = false;
+                    }
+                }
+                else if (randNum < 85) {
+                    // 15% 概率滚动
+                    if (player->isOnGround) {
+                        player->isRolling = true; // 开启滚动状态（触发滚动动画）
+                        player->vx = player->facingRight ? 8 : -8;
+                        player->resetRollAnim();
+                    } else {
+                        player->vx = 0; // 如果在空中就不滚了，原地发呆
+                    }
+                }
+                else {
+                    // 15% 概率呆着不动
+                    player->vx = 0;
+                }
+            }
+
+            // 【范围限制】：别让卡比走出初始屏幕
+            if (player->x() < 200) {
+                player->vx = 3;
+                player->facingRight = true;
+            }
+            if (player->x() > 800) {
+                player->vx = -3;
+                player->facingRight = false;
+            }
+        }
+
+        if (!player->isOnGround) {
+            player->vy += 0.8;          // 正常的重力加速度
+            if (player->vy > 15) player->vy = 15; // 限制最大下落速度
+        }
+
+        player->setPos(player->x() + player->vx, player->y() + player->vy);
+
+        if (player->y() >= 904) {
+            player->setPos(player->x(), 904);
+            player->vy = 0;
+            player->isOnGround = true;
+        }
+
+        player->updateLogic();
+        // 锁定镜头
+        view->centerOn(500, 850);
+        for (QGraphicsRectItem* bg : backgroundLayers) {
+            bg->setPos(500 - bg->rect().width() / 2.0, 0);
+        }
+        return;
+    }
+    // 阶段二：按下回车，卡比和地面一起左移
+    if (currentState == INTRO_PAN) {
+        player->isOnGround = true;
+        qreal moveSpeed = 8.0;
+        player->vx = 0; player->vy = 0;
+        player->setPos(player->x() - moveSpeed, 904); // 贴地平移
+
+        // 地板跟着左移
+        for (Tile* tile : floors) {
+            tile->setPos(tile->x() - moveSpeed, tile->y());
+        }
+
+        // 到达原定位置
+        if (player->x() <= 100) {
+            qreal errorX = 100 - player->x();
+            for (Tile* tile : floors) {
+                tile->setPos(tile->x() + errorX, tile->y());
+            }
+            player->setPos(100, 904); // 完美归位
+
+            // 切换状态，唤醒所有元素
+            currentState = PLAYING;
+            for (Enemy* e : enemies) e->setVisible(true);
+            for (Cake* c : cakes) c->setVisible(true);
+        }
+
+        player->updateLogic();
+        view->centerOn(500, 850);
+        for (QGraphicsRectItem* bg : backgroundLayers) {
+            bg->setPos(500 - bg->rect().width() / 2.0, 0);
+        }
+        return;
+    }
+
     // ====== L键长按：吞噬 vs 取消形态 ======
     if (keys.contains(Qt::Key_L) && player->currentForm == Enemy::NONE && player->isOnGround && !player->isFatty && !player->isRolling && !player->isAttacking && !player->isDigesting && !player->isSpitting) {
         player->startSwallow();

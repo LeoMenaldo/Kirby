@@ -8,6 +8,9 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QSet>
+#include <QGraphicsTextItem>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 #include "player.h"
 #include "tile.h"
 #include "enemy.h"
@@ -48,6 +51,20 @@ private:
     QList<Enemy*> enemies;
     QList<Projectile*> projectiles;
     QList<Cake*> cakes;
+    QMediaPlayer *bgmPlayer;
+    QAudioOutput *audioOutput;
+    int aiTimer = 0;
+    bool enterPressed = false;
+
+    // ====== 新增：游戏状态机枚举与控制变量 ======
+    enum GameState { START_SCREEN, INTRO_PAN, PLAYING };
+    GameState currentState = START_SCREEN;
+    int introTimer = 0;
+
+    // UI文字元素
+    QGraphicsTextItem* titleText = nullptr;
+    QGraphicsTextItem* hintText = nullptr;
+
 };
 
 #endif // MAINWINDOW_H

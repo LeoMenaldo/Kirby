@@ -4,6 +4,13 @@
 Player::Player() {
     int frameSize = 48;
 
+    // 翻滚
+    QPixmap rollSheet(":/tu/kirby_fangun.png");
+    int rollCount = rollSheet.width() / frameSize;
+    for (int i = 0; i < rollCount; i++) {
+        rollFrames.push_back(rollSheet.copy(i * frameSize, 0, frameSize, frameSize));
+    }
+
     // 待机
     QPixmap daijiSheet(":/tu/kirby_daiji.png");
     int daijiCount = daijiSheet.width() / frameSize;
@@ -23,13 +30,6 @@ Player::Player() {
     int flyCount = flySheet.width() / frameSize;
     for (int i = 0; i < flyCount; i++) {
         jumpFrames.push_back(flySheet.copy(i * frameSize, 0, frameSize, frameSize));
-    }
-
-    // 翻滚（新增）
-    QPixmap rollSheet(":/tu/kirby_fangun.png");
-    int rollCount = rollSheet.width() / frameSize;
-    for (int i = 0; i < rollCount; i++) {
-        rollFrames.push_back(rollSheet.copy(i * frameSize, 0, frameSize, frameSize));
     }
 
     // 攻击（新增）

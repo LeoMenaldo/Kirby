@@ -67,6 +67,8 @@ public:
 
     int formCancelTimer = 0;  // 长按L取消形态的计时器（60帧=1秒）
 
+    void resetRollAnim() { rollCurrentFrame = 0; rollAnimTimer = 0; }
+
 private:
     int currentFrame = 0;
     int animTimer = 0;
