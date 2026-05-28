@@ -53,6 +53,22 @@ MainWindow::MainWindow(QWidget *parent)
     QPixmap waterSurface = tileSheet.copy(originalSize * 2, 0, originalSize, originalSize);
     QPixmap waterBody    = tileSheet.copy(originalSize * 3, 0, originalSize, originalSize);
 
+    // 存入类成员中，留作备用
+    waterBodyPix         = tileSheet.copy(originalSize * 3, 0, originalSize, originalSize);
+
+    // 加载冰块和碎石的素材
+    QPixmap iceBlockPix(":/tu/ice.png");
+    QPixmap rubblePix(":/tu/suishi.png");
+    // ====== 新增：切割尾气素材（假设为横向两帧） ======
+    QPixmap weiqiSheet(":/tu/weiqi.png");
+    if (!weiqiSheet.isNull()) {
+        int count = 2;
+        int fw = weiqiSheet.width() / count;
+        int fh = weiqiSheet.height();
+        for (int i = 0; i < count; i++) {
+            weiqiFrames.push_back(weiqiSheet.copy(i * fw, 0, fw, fh));
+        }
+    }
     // 4. 关卡矩阵 (保持不变，确保地图长度足够)
     QStringList levelData = {
         "000000000000000000000000000000000000000000000",
@@ -66,9 +82,9 @@ MainWindow::MainWindow(QWidget *parent)
         "000000000000000000000000000000000000000000000",
         "000000000000000000000000000000000000000000000",
         "000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000",
-        "000000000000000000000000000000000000000000000", // 让地面大概出现在第10行左右
-        "111111111111111111111111111111111111111111111",
+        "000000000000000000055000000006600000000000000",
+        "000000000000000000055000000006600000000000000", // 让地面大概出现在第10行左右
+        "11111111111111111111111111111111111111111111111111111111111111111111111",
     };
 
     int renderSize = originalSize * 2;
@@ -83,11 +99,13 @@ MainWindow::MainWindow(QWidget *parent)
             else if (type == '2')  tile = new Tile(Tile::Dirt, dirt);
             else if (type == '3')  tile = new Tile(Tile::WaterSurface, waterSurface);
             else if (type == '4')  tile = new Tile(Tile::WaterBody, waterBody);
+            else if (type == '5')  tile = new Tile(Tile::IceBlock, iceBlockPix);
+            else if (type == '6')  tile = new Tile(Tile::RubbleBlock, rubblePix);
             if (tile) {
                 tile->setPos(c * renderSize, r * renderSize + bottomOffset);
                 tile->setScale(2.0);
                 scene->addItem(tile);
-                if (type == '1' || type == '2') floors.append(tile);
+                if (type == '1' || type == '2' || type == '5' || type == '6') floors.append(tile);
             }
         }
     }
@@ -99,28 +117,28 @@ MainWindow::MainWindow(QWidget *parent)
     //生成敌人！
     BasicEnemy* fireEnemy = new BasicEnemy(":/tu/fire_enemy.png", 5, 1.5, Enemy::FIRE);
     fireEnemy->setScale(2);
-    fireEnemy->setPos(400, 500);
+    fireEnemy->setPos(1200, 500);
     fireEnemy->setVisible(false);
     scene->addItem(fireEnemy);
     enemies.append(fireEnemy);
 
     BasicEnemy* iceEnemy = new BasicEnemy(":/tu/Ice_Dude.png", 6, 1.2, Enemy::ICE);
-    iceEnemy->setScale(2);
-    iceEnemy->setPos(700, 500);
+    iceEnemy->setScale(0.6);
+    iceEnemy->setPos(1600, 500);
     iceEnemy->setVisible(false);
     scene->addItem(iceEnemy);
     enemies.append(iceEnemy);
 
     BasicEnemy* leafEnemy = new BasicEnemy(":/tu/Leaf_Dude.png", 8, 1.0, Enemy::LEAF);
-    leafEnemy->setScale(2);
-    leafEnemy->setPos(1000, 500);
+    leafEnemy->setScale(0.6);
+    leafEnemy->setPos(2000, 500);
     leafEnemy->setVisible(false);
     scene->addItem(leafEnemy);
     enemies.append(leafEnemy);
 
     BasicEnemy* lightningEnemy = new BasicEnemy(":/tu/Lightning_Dude.png", 6, 1.8, Enemy::SPARK);
-    lightningEnemy->setScale(2);
-    lightningEnemy->setPos(1300, 500);
+    lightningEnemy->setScale(0.6);
+    lightningEnemy->setPos(2400, 500);
     lightningEnemy->setVisible(false);
     scene->addItem(lightningEnemy);
     enemies.append(lightningEnemy);
@@ -211,57 +229,25 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         lastHorizontalKey = event->key();
     else if (event->key() == Qt::Key_D || event->key() == Qt::Key_Right)
         lastHorizontalKey = event->key();
-    else if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up)
-        jumpBuffer = 6;
+    else if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up){
+        if (player->currentForm != Enemy::SPARK) {
+            jumpBuffer = 6;
+        }
+    }
     else if (event->key() == Qt::Key_K)
         player->startRoll();
     // ====== J键攻击——四形态天生攻击，普通形态需蛋糕 ======
     else if (event->key() == Qt::Key_J) {
-        bool canAttack = !player->isAttacking && !player->isRolling && !player->isSwallowing && !player->isSpitting;
+        // 增加对疾跑和爆炸状态的拦截
+        bool canAttack = !player->isAttacking && !player->isLeafSkill && !player->isRolling &&
+                         !player->isSwallowing && !player->isSpitting &&
+                         !player->isFireSprinting && !player->isExploding;
         if (!canAttack) return;
 
         Enemy::CopyAbility form = player->currentForm;
 
-        if (form == Enemy::FIRE || form == Enemy::ICE || form == Enemy::LEAF || form == Enemy::SPARK) {
-            // 四形态：天生攻击能力，不需要吃蛋糕
-            player->startAttack();
-
-            // 根据形态选择弹丸颜色
-            QColor outerColor, innerColor;
-            if (form == Enemy::FIRE) {
-                outerColor = QColor(255, 80, 0);
-                innerColor = QColor(255, 200, 50);
-            } else if (form == Enemy::ICE) {
-                outerColor = QColor(30, 120, 255);
-                innerColor = QColor(180, 220, 255);
-            } else if (form == Enemy::LEAF) {
-                outerColor = QColor(30, 180, 60);
-                innerColor = QColor(150, 255, 150);
-            } else { // SPARK
-                outerColor = QColor(255, 200, 30);
-                innerColor = QColor(255, 255, 180);
-            }
-
-            Projectile* proj = new Projectile(player->facingRight);
-            proj->damage = 2;
-            QPixmap pix(24, 24);
-            pix.fill(Qt::transparent);
-            QPainter painter(&pix);
-            painter.setBrush(outerColor);
-            painter.setPen(Qt::NoPen);
-            painter.drawEllipse(0, 0, 24, 24);
-            painter.setBrush(innerColor);
-            painter.drawEllipse(4, 4, 16, 16);
-            painter.end();
-            proj->setPixmap(pix);
-            double startX = player->facingRight ? player->x() + 48 : player->x() - 24;
-            double startY = player->y() + 12;
-            proj->setPos(startX, startY);
-            scene->addItem(proj);
-            projectiles.append(proj);
-
-        } else {
-            // 普通形态：必须吃蛋糕才有攻击能力
+        // 核心修改：只有普通形态才能发动原本的光球攻击
+        if (form == Enemy::NONE) {
             if (player->hasAttackPower()) {
                 player->startAttack();
                 Projectile* proj = new Projectile(player->facingRight);
@@ -272,10 +258,67 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
                 projectiles.append(proj);
             }
         }
+        // 核心修改：火形态按下 J 触发专属疾跑
+        else if (form == Enemy::FIRE) {
+            if (player->fireSkillCooldownTimer <= 0) {
+                player->startFireSprint();
+            }
+        }
+        // 3. 叶形态：发射羽毛技能
+        else if (form == Enemy::LEAF) {
+            if (player->leafSkillCooldownTimer <= 0) {
+                player->startLeafSkill();
+                player->leafSkillCooldownTimer = 180; // 3秒冷却
+
+                Projectile* proj = new Projectile(player->facingRight);
+                proj->damage = 1;
+
+                QPixmap featherPix(":/tu/feather.png");
+
+                // 【核心修复】：强制缩小羽毛高度为 20 像素，去除多余的透明边缘碰撞
+                featherPix = featherPix.scaledToHeight(20, Qt::SmoothTransformation);
+
+                if (!player->facingRight) {
+                    featherPix = featherPix.transformed(QTransform().scale(-1, 1));
+                }
+                proj->setPixmap(featherPix);
+
+                // 【核心修复】：把 Y 坐标调到卡比正中央 (卡比高48，中间就是24)
+                double startX = player->facingRight ? player->x() + 48 : player->x() - featherPix.width();
+                double startY = player->y() + 24 - (featherPix.height() / 2.0);
+                proj->setPos(startX, startY);
+
+                scene->addItem(proj);
+                projectiles.append(proj);
+            }
+        }
+        // 4. ====== 新增：电形态切换飞行模式 ======
+        else if (form == Enemy::SPARK) {
+            player->isLightningFlying = !player->isLightningFlying;
+            if (player->isLightningFlying) {
+                jumpBuffer = 0;
+                player->vy = 0; // 开启时瞬间悬停，抵消掉落惯性
+            } else {
+                player->setState(Player::JUMPING); // 关掉时恢复自然下落动作
+            }
+        }
     }
     else if (event->key() == Qt::Key_T) {
         if (player->isFatty && !player->isSpitting) {
             player->startSpit();
+        }
+        // 2. ====== 新增：如果当前拥有变身形态，按 T 直接取消变身 ======
+        else if (!player->isFatty && player->currentForm != Enemy::NONE) {
+            player->currentForm = Enemy::NONE; // 瞬间恢复为普通形态
+
+            // 强制中断所有形态专属的技能状态，防止卡死在半空或保持异常移速
+            player->isAttacking = false;
+            player->isRolling = false;
+            player->isFireSprinting = false;
+            player->isExploding = false;
+
+            // 重置为常规的待机或跳跃状态
+            player->setState(player->isOnGround ? Player::IDLE : Player::JUMPING);
         }
     }
     // ====== L键多功能逻辑 ======
@@ -288,6 +331,15 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         else if (!player->isFatty && player->currentForm != Enemy::NONE && player->formCancelTimer == 0) {
             player->formCancelTimer = 1;
         }
+    }
+    // ====== J键长按：冰形态专属防御 ======
+    if (keys.contains(Qt::Key_J) && player->currentForm == Enemy::ICE && player->iceDefendCooldownTimer <= 0) {
+        if (!player->isRolling && !player->isSwallowing && !player->isDigesting && !player->isSpitting && !player->isIceDefending) {
+            player->startIceDefend();
+        }
+    } else if (!keys.contains(Qt::Key_J) && player->isIceDefending) {
+        // 松开 J 键时，立刻解除防御状态并开始 10 秒冷却
+        player->endIceDefend();
     }
 }
 void MainWindow::keyReleaseEvent(QKeyEvent *event) {
@@ -392,16 +444,29 @@ void MainWindow::gameUpdate() {
         player->vx = 0; player->vy = 0;
         player->setPos(player->x() - moveSpeed, 904); // 贴地平移
 
-        // 地板跟着左移
+        // 👇 核心修改 1：地板、怪物和道具一起跟着向左平移，保持相对地图的绝对位置
         for (Tile* tile : floors) {
             tile->setPos(tile->x() - moveSpeed, tile->y());
+        }
+        for (Enemy* e : enemies) {
+            e->setPos(e->x() - moveSpeed, e->y());
+        }
+        for (Cake* c : cakes) {
+            c->setPos(c->x() - moveSpeed, c->y());
         }
 
         // 到达原定位置
         if (player->x() <= 100) {
             qreal errorX = 100 - player->x();
+            // 👇 核心修改 2：最后一帧对齐误差校准时，怪物和道具也要同步校准
             for (Tile* tile : floors) {
                 tile->setPos(tile->x() + errorX, tile->y());
+            }
+            for (Enemy* e : enemies) {
+                e->setPos(e->x() + errorX, e->y());
+            }
+            for (Cake* c : cakes) {
+                c->setPos(c->x() + errorX, c->y());
             }
             player->setPos(100, 904); // 完美归位
 
@@ -472,6 +537,39 @@ void MainWindow::gameUpdate() {
         jumpBuffer = 0;
         coyoteTime = 0;
     }
+    // ====== 修改这部分：锁定爆炸期间的移动 ======
+    else if (player->isExploding || player->isAttacking || player->isLeafSkill || player->isLightningFlying|| player->isIceDefending) {
+        jumpBuffer = 0; coyoteTime = 0;
+        if (player->isExploding) {
+            player->vx = 0; player->vy = 0;
+        }
+        else if (player->isAttacking || player->isLeafSkill) {
+            player->vx = 0;
+        }
+        // ====== 闪电飞行的八向移动（统一速度） ======
+        else if (player->isLightningFlying) {
+            jumpBuffer = 0; coyoteTime = 0;
+            int flySpeed = 6;
+
+            // 处理水平
+            if (keys.contains(Qt::Key_A) || keys.contains(Qt::Key_Left)) {
+                player->vx = -flySpeed; player->facingRight = false;
+            } else if (keys.contains(Qt::Key_D) || keys.contains(Qt::Key_Right)) {
+                player->vx = flySpeed; player->facingRight = true;
+            } else {
+                player->vx = 0;
+            }
+
+            // 处理垂直
+            if (keys.contains(Qt::Key_W) || keys.contains(Qt::Key_Up)) {
+                player->vy = -flySpeed;
+            } else if (keys.contains(Qt::Key_S) || keys.contains(Qt::Key_Down)) {
+                player->vy = flySpeed;
+            } else {
+                player->vy = 0;
+            }
+        }
+    }
     else {
         // 水平输入（Fatty 状态下正常允许走动）
         int activeKey = 0;
@@ -513,7 +611,7 @@ void MainWindow::gameUpdate() {
             coyoteTime = 0;
             player->isHovering = false;
         }
-    } else if (!player->isSwallowing && !player->isSpitting && !player->isDigesting) {
+    } else if (!player->isSwallowing && !player->isIceDefending && !player->isSpitting && !player->isDigesting && !player->isFireSprinting) {
         // 1. 水平输入（原有逻辑）—— 吞噬/吐出/变身时跳过，防止覆盖第一段运动逻辑的vx=0
         int activeKey = 0;
         if (keys.contains(lastHorizontalKey)) activeKey = lastHorizontalKey;
@@ -539,7 +637,7 @@ void MainWindow::gameUpdate() {
         && !player->isRolling && !player->isSwallowing;
     }
 
-    if (!player->isOnGround) {
+    if (!player->isOnGround&& !player->isLightningFlying) {
         if (player->isHovering && player->vy > 0) {
             player->vy += 0.1;
             if (player->vy > 2.5) player->vy = 2.5;
@@ -575,51 +673,115 @@ void MainWindow::gameUpdate() {
     }
     // 4. 水平移动 + 碰撞
     player->setPos(player->x() + player->vx, player->y());
-    const auto &constFloors = floors;
-    for (Tile *tile : constFloors) {
+
+    // 替换原有的 constFloors 遍历为倒序遍历
+    for (int i = floors.size() - 1; i >= 0; i--) {
+        Tile *tile = floors[i];
         if (player->collidesWithItem(tile)) {
+
+            // ====== 技能互动：火形态疾跑撞击特殊方块 ======
+            if (player->isFireSprinting) {
+                if (tile->tileType() == Tile::IceBlock) {
+                    // 火融冰：改变地形贴图，由于是水了，不产生物理阻挡，直接 continue
+                    tile->changeType(Tile::WaterBody, waterBodyPix);
+                    floors.removeAt(i);
+                    continue;
+                }
+                else if (tile->tileType() == Tile::RubbleBlock) {
+                    // 撞碎石：自己爆炸，销毁石头，不产生物理阻挡
+                    player->startExplosion();
+                    scene->removeItem(tile);
+                    floors.removeAt(i);
+                    delete tile;
+                    continue;
+                }
+            }
+
+            // 正常的物理阻挡逻辑
             QRectF tRect = tile->sceneBoundingRect();
-            if (player->vx > 0)
-                player->setPos(tRect.left() - 48, player->y()); // 将 pRect.width() 替换为固定的 48
-            else if (player->vx < 0)
+            if (player->vx > 0) {
+                player->setPos(tRect.left() - 48, player->y());
+                if (player->isFireSprinting) player->endFireSprint(); // 撞到普通硬墙，被迫停下
+            } else if (player->vx < 0) {
                 player->setPos(tRect.right(), player->y());
+                if (player->isFireSprinting) player->endFireSprint();
+            }
         }
     }
 
     // 5. 垂直检测
     bool onGround = false;
 
+    // A. 预判地面 (向下探测1像素)
     player->setPos(player->x(), player->y() + 1);
-    for (Tile *tile : constFloors) {
+    for (int i = floors.size() - 1; i >= 0; i--) {
+        Tile *tile = floors[i];
         if (player->collidesWithItem(tile)) {
+
+            // ====== 技能互动：火形态疾跑上下方向融冰与炸石 ======
+            if (player->isFireSprinting) {
+                if (tile->tileType() == Tile::IceBlock) {
+                    // 火融冰：改变地形贴图并移除物理体积
+                    tile->changeType(Tile::WaterBody, waterBodyPix);
+                    floors.removeAt(i);
+                    continue;
+                } else if (tile->tileType() == Tile::RubbleBlock) {
+                    // 踩/顶到碎石：自己爆炸，销毁石头
+                    player->startExplosion();
+                    scene->removeItem(tile);
+                    floors.removeAt(i);
+                    delete tile;
+                    continue;
+                }
+            }
+
+            // 原本的正常阻挡逻辑
             if (player->vy >= 0) {
                 QRectF tRect = tile->sceneBoundingRect();
                 player->setPos(player->x(), tRect.top() - 48); // 将 pRect.height() 替换为固定的 48
                 player->vy = 0;
                 onGround = true;
             }
-            break;
+            break; // 踩到一块实心方块就跳出检测
         }
     }
 
+    // B. 正式垂直移动与碰撞
     if (!onGround) {
         player->setPos(player->x(), player->y() - 1 + player->vy);
-        for (Tile *tile : constFloors) {
+        for (int i = floors.size() - 1; i >= 0; i--) {
+            Tile *tile = floors[i];
             if (player->collidesWithItem(tile)) {
+
+                // ====== 技能互动：火形态疾跑上下方向融冰与炸石 ======
+                if (player->isFireSprinting) {
+                    if (tile->tileType() == Tile::IceBlock) {
+                        tile->changeType(Tile::WaterBody, waterBodyPix);
+                        floors.removeAt(i);
+                        continue;
+                    } else if (tile->tileType() == Tile::RubbleBlock) {
+                        player->startExplosion();
+                        scene->removeItem(tile);
+                        floors.removeAt(i);
+                        delete tile;
+                        continue;
+                    }
+                }
+
+                // 原本的正常阻挡逻辑
                 QRectF tRect = tile->sceneBoundingRect();
                 if (player->vy >= 0) {
-                    player->setPos(player->x(), tRect.top() - 48); // 将 pRect.height() 替换为固定的 48
+                    player->setPos(player->x(), tRect.top() - 48);
                     player->vy = 0;
                     onGround = true;
                 } else {
-                    player->setPos(player->x(), tRect.bottom()); // 撞头时，由于逻辑原点在头顶，直接用 bottom 没问题
+                    player->setPos(player->x(), tRect.bottom()); // 撞头
                     player->vy = 0;
                 }
             }
         }
     }
     player->isOnGround = onGround;
-
     // 6. 翻滚结束判定
     if (player->isRolling) {
         player->rollTimer--;
@@ -682,28 +844,31 @@ void MainWindow::gameUpdate() {
 
     // 1. 获取基础参数
     qreal cameraX = player->x();
-    qreal cameraY = 850; // 你之前设定的固定高度中心
-    qreal sceneW = scene->sceneRect().width();  // 场景总宽度（如 5000）
-
-    // 获取视口（窗口）的一半宽度
-    // 使用 view->viewport()->width() 能得到更精确的内部绘图区域宽度
+    qreal cameraY = 850;
+    qreal sceneW = scene->sceneRect().width();
     qreal halfViewW = view->viewport()->width() / 2.0;
 
-    // 2. 边界检查：如果相机的目标位置会让视角超出地图边缘，则强制锁定相机
-    // 处理左边缘
+    // 2. 边界检查
     if (cameraX < halfViewW) {
         cameraX = halfViewW;
-    }
-    // 处理右边缘
-    else if (cameraX > sceneW - halfViewW) {
+    } else if (cameraX > sceneW - halfViewW) {
         cameraX = sceneW - halfViewW;
     }
 
-    // 3. 执行视角居中
-    view->centerOn(cameraX, cameraY);
+    // 3. 执行视角居中并加入【震屏特效】
+    qreal renderX = cameraX;
+    qreal renderY = cameraY;
 
-    // 4. 背景图层跟随“锁定后”的相机坐标
-    // 这样当相机停止移动时，背景也会因为坐标不再变化而相对于屏幕静止
+    if (player->isExploding) {
+        // 使用随机数让相机在中心点周围 ±8 像素剧烈抖动
+        renderX += (rand() % 17) - 8;
+        renderY += (rand() % 17) - 8;
+    }
+
+    view->centerOn(renderX, renderY);
+
+    // 4. 背景图层跟随“锁定后且未震动”的相机坐标
+    // 这样背景不会跟着画面一起疯狂乱抖，产生极好的纵深对比感
     for (QGraphicsRectItem* bg : backgroundLayers) {
         qreal bgX = cameraX - bg->rect().width() / 2.0;
         bg->setPos(bgX, 0);
@@ -715,7 +880,7 @@ void MainWindow::gameUpdate() {
         proj->updateLogic();
 
         bool hitEnemy = false;
-
+        bool hitWall = false; // 新增：是否撞墙的标志位
         // 1. 检测是否打到敌人
         for (int j = enemies.size() - 1; j >= 0; j--) {
             Enemy* enemy = enemies[j];
@@ -734,22 +899,50 @@ void MainWindow::gameUpdate() {
             }
         }
 
-        // 2. 检测光球是否寿命耗尽 或 击中了敌人
-        if (hitEnemy || proj->lifeTime <= 0) {
+
+        // 2. 新增：检测是否撞到实体方块
+        if (!hitEnemy) { // 如果已经打中敌人了，就不需要再检测撞墙了
+            for (Tile *tile : floors) {
+                // 只要子弹碰到了 floors 列表里的方块（实体墙、草地、石头等）
+                if (proj->collidesWithItem(tile)) {
+                    hitWall = true;
+                    break;
+                }
+            }
+        }
+        // 3. 检测光球是否寿命耗尽 或 击中了敌人
+        if (hitEnemy ||hitWall|| proj->lifeTime <= 0) {
             scene->removeItem(proj);
             projectiles.removeAt(i);
             delete proj;
         }
     }
     // ====== 新增：玩家与敌人碰撞检测 (受击扣血) ======
-    if (player->invulnTimer == 0 && player->hp>0) {
-        for (Enemy* enemy : enemies) {
+    if (player->invulnTimer == 0 && player->hp > 0) {
+        // 必须用逆序遍历，因为火形态疾跑爆炸可能会直接杀死敌人并将其从内存删除
+        for (int j = enemies.size() - 1; j >= 0; j--) {
+            Enemy* enemy = enemies[j];
             // 只有活着的目标才能对玩家造成伤害
             if (!enemy->isDead && player->collidesWithItem(enemy)) {
 
                 // 【机制平衡】如果卡比正在翻滚或吞噬，视为无敌/免伤，不扣血
                 if (player->isRolling) continue;
                 if (player->isSwallowing) continue;
+                if (player->isIceDefending) continue;
+                // ====== 技能互动：火形态疾跑或爆炸触碰敌人 ======
+                if (player->isFireSprinting || player->isExploding) {
+                    if (player->isFireSprinting) {
+                        player->startExplosion(); // 疾跑撞到人触发爆炸
+                    }
+
+                    enemy->takeDamage(2); // 爆炸对敌人造成2点伤害
+                    if (enemy->isDead) {
+                        scene->removeItem(enemy);
+                        enemies.removeAt(j);
+                        delete enemy;
+                    }
+                    continue; // 爆炸期间具有绝对无敌免伤，跳过下方扣血代码
+                }
 
                 // 扣除生命值并给予1秒(60帧)无敌时间
                 player->hp--;
@@ -924,6 +1117,46 @@ void MainWindow::gameUpdate() {
                 }
                 break; // 踩到一块地板后就跳出当前的碰撞检查
             }
+        }
+    }
+    // ====== 闪电形态：生成与更新尾气系统 ======
+    // 保险机制：如果受到攻击丢失了形态或按T取消了形态，强制坠机
+    if (player->currentForm != Enemy::SPARK) player->isLightningFlying = false;
+
+    if (player->isLightningFlying) {
+        // 只有在发生移动时，才喷射尾气
+        if (player->vx != 0 || player->vy != 0) {
+            // 每 3 帧生成一团尾气
+            if (aiTimer % 3 == 0 && !weiqiFrames.isEmpty()) {
+                QGraphicsPixmapItem* ex = new QGraphicsPixmapItem();
+                int frameIdx = (aiTimer / 3) % weiqiFrames.size();
+                QPixmap img = weiqiFrames[frameIdx];
+
+                if (!player->facingRight) img = img.transformed(QTransform().scale(-1, 1));
+                ex->setPixmap(img);
+
+                // 定位在卡比屁股后面
+                double exX = player->facingRight ? player->x() - img.width() + 10 : player->x() + 48 - 10;
+                double exY = player->y() + 24 - img.height() / 2.0;
+                ex->setPos(exX, exY);
+                ex->setZValue(player->zValue() - 1); // 确保尾气在卡比身体后方
+
+                scene->addItem(ex);
+                exhaustItems.append(ex);
+                exhaustLifetimes.append(15); // 尾气存活 15 帧
+            }
+        }
+    }
+
+    // 渐变消散尾气
+    for (int i = exhaustItems.size() - 1; i >= 0; i--) {
+        exhaustLifetimes[i]--;
+        exhaustItems[i]->setOpacity(exhaustLifetimes[i] / 15.0); // 随着时间渐渐变透明
+        if (exhaustLifetimes[i] <= 0) {
+            scene->removeItem(exhaustItems[i]);
+            delete exhaustItems[i];
+            exhaustItems.removeAt(i);
+            exhaustLifetimes.removeAt(i);
         }
     }
 }

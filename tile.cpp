@@ -11,3 +11,8 @@ Tile::Tile(TileType type, const QPixmap &pixmap)
 void Tile::updateLogic() {
     // 静态方块暂无逻辑，可留空
 }
+
+void Tile::changeType(TileType newType, const QPixmap &newPix) {
+    m_type = newType;
+    setPixmap(newPix);
+}

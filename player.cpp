@@ -130,18 +130,47 @@ Player::Player() {
             fireRollFrames.push_back(fireRollSheet.copy(i * fh, 0, fh, fh));
         }
     }
+    // ====== 火形态新技能素材加载 ======
+    QPixmap sprintSheet(":/tu/fire_speedrun.png");
+    if (!sprintSheet.isNull()) {
+        int count = 4; // 假设是一排4帧的动画
+        int fw = sprintSheet.width() / count;
+        int fh = sprintSheet.height();
+        for (int i = 0; i < count; i++) fireSprintFrames.push_back(sprintSheet.copy(i * fw, 0, fw, fh));
+    }
 
-    // 火形态：攻击动画加载 (firesucai.png, 垂直排列8帧, 每帧472x172)
-    QPixmap fireAttackSheet(":/tu/firesucai.png");
-    if (!fireAttackSheet.isNull()) {
-        int fh = 172;
-        int fw = fireAttackSheet.width();
-        int count = fireAttackSheet.height() / fh;
+    QPixmap explodeSheet(":/tu/fire_baozha.png");
+    if (!explodeSheet.isNull()) {
+        int count = 4;
+        int fw = explodeSheet.width() / count;
+        int fh = explodeSheet.height();
+        for (int i = 0; i < count; i++) fireExplodeFrames.push_back(explodeSheet.copy(i * fw, 0, fw, fh));
+    }
+
+
+    // ====== 修复这里：强行清空被旧逻辑错误加载的整张大图 ======
+    leafAttackFrames.clear();
+
+    // 重新按水平 3 帧切割新的动作
+    QPixmap leafAttackSheet(":/tu/leaf_attack.png");
+    if (!leafAttackSheet.isNull()) {
+        int count = 3;
+        int fw = leafAttackSheet.width() / count;
+        int fh = leafAttackSheet.height();
         for (int i = 0; i < count; i++) {
-            fireAttackFrames.push_back(fireAttackSheet.copy(0, i * fh, fw, fh));
+            leafAttackFrames.push_back(leafAttackSheet.copy(i * fw, 0, fw, fh));
         }
     }
 
+    QPixmap iceDefSheet(":/tu/ice_defend.png");
+    if (!iceDefSheet.isNull()) {
+        int count = 4;
+        int fw = iceDefSheet.width() / count;
+        int fh = iceDefSheet.height();
+        for (int i = 0; i < count; i++) {
+            iceDefendFrames.push_back(iceDefSheet.copy(i * fw, 0, fw, fh));
+        }
+    }
     // ====== 冰形态素材加载 ======
     auto loadFormSprites = [](QString prefix, QVector<QPixmap>& idle, QVector<QPixmap>& walk,
                                QVector<QPixmap>& jump, QVector<QPixmap>& roll, QVector<QPixmap>& attack) {
@@ -177,16 +206,9 @@ Player::Player() {
             for (int i = 0; i < count; i++)
                 roll.push_back(rollSheet.copy(i * fh, 0, fh, fh));
         }
-        // 攻击
-        QPixmap attackSheet(":/tu/" + prefix + "_sucai.png");
-        if (!attackSheet.isNull()) {
-            int fh = 172;
-            int fw = attackSheet.width();
-            int count = attackSheet.height() / fh;
-            for (int i = 0; i < count; i++)
-                attack.push_back(attackSheet.copy(0, i * fh, fw, fh));
-        }
     };
+
+
 
     loadFormSprites("ice", iceIdleFrames, iceWalkFrames, iceJumpFrames, iceRollFrames, iceAttackFrames);
     loadFormSprites("leaf", leafIdleFrames, leafWalkFrames, leafJumpFrames, leafRollFrames, leafAttackFrames);
@@ -200,10 +222,28 @@ void Player::setState(State newState) {
         animTimer = 0;
     }
 }
+void Player::startFireSprint() {
+    if (isFireSprinting || isExploding) return;
+    isFireSprinting = true;
+    fireSprintTimer = 600;          // 冲刺持续 60 帧 (约 1 秒)
+    fireSkillCooldownTimer = 0;  // 技能冷却 180 帧 (约 3 秒)
+    currentFrame = 0;
+    animTimer = 0;
+}
 
+void Player::endFireSprint() {
+    isFireSprinting = false;
+    setState(isOnGround ? IDLE : JUMPING);
+}
+
+void Player::startExplosion() {
+    isFireSprinting = false;
+    isExploding = true;
+    currentFrame = 0;
+    animTimer = 0;
+}
 void Player::startRoll() {
-    if (isRolling) return;
-
+    if (isRolling || isExploding || isAttacking || isLeafSkill || isSwallowing || isSpitting || isDigesting || isFireSprinting) return;
     // 根据形态选择翻滚帧
     QVector<QPixmap>* activeRollFrames = &rollFrames;
     if (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) activeRollFrames = &fireRollFrames;
@@ -233,7 +273,39 @@ void Player::endRoll() {
 }
 
 void Player::updateLogic() {
-    // 受击无敌时间计时与闪烁效果
+    // 1. 技能冷却倒计时
+    if (fireSkillCooldownTimer > 0) fireSkillCooldownTimer--;
+    if (leafSkillCooldownTimer > 0) leafSkillCooldownTimer--;
+    if (iceDefendCooldownTimer > 0) iceDefendCooldownTimer--;
+    if (isIceDefending) {
+        vx = 0; // 防御期间锁死水平物理移动
+        iceDefendTimer--;
+
+        attackAnimTimer++;
+        if (attackAnimTimer >= 6) { // 每 6 帧切换一次动画
+            attackAnimTimer = 0;
+            attackCurrentFrame++;
+
+            // 核心逻辑：如果播到了第 4 帧（越界），强制拉回第 2 帧（即第三张图），实现最后两帧无限循环
+            if (attackCurrentFrame >= iceDefendFrames.size()) {
+                attackCurrentFrame = 2;
+            }
+        }
+
+        if (!iceDefendFrames.isEmpty()) {
+            QPixmap img = iceDefendFrames[attackCurrentFrame];
+            if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+            setOffset((48 - img.width()) / 2.0, 48 - img.height());
+            setPixmap(img);
+        }
+
+        // 5秒时间耗尽，强制解除防御并进入冷却
+        if (iceDefendTimer <= 0) {
+            endIceDefend();
+        }
+        return;
+    }
+    // 2. 受击无敌时间计时与闪烁效果
     if (invulnTimer > 0) {
         invulnTimer--;
         if (invulnTimer % 4 < 2) setVisible(false);
@@ -242,11 +314,115 @@ void Player::updateLogic() {
         setVisible(true);
     }
 
-    // ====== 新增：变身消化状态拦截 ======
+    // ====== 新技能：电形态飞行拦截 ======
+    if (isLightningFlying) {
+        animTimer++;
+        if (animTimer >= 3) {
+            animTimer = 0;
+            currentFrame++;
+            if (currentFrame >= lightningJumpFrames.size()) currentFrame = 0;
+
+            if (!lightningJumpFrames.isEmpty()) {
+                QPixmap img = lightningJumpFrames[currentFrame];
+                if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+                setOffset((48 - img.width()) / 2.0, 48 - img.height());
+                setPixmap(img);
+            }
+        }
+        return;
+    }
+
+    // ====== 新技能：爆炸状态拦截 ======
+    if (isExploding) {
+        vx = 0; vy = 0;
+        animTimer++;
+        if (animTimer >= 4) {
+            animTimer = 0;
+            currentFrame++;
+            if (currentFrame >= fireExplodeFrames.size() ) {
+                isExploding = false;
+                setState(isOnGround ? IDLE : JUMPING);
+                return;
+            }
+            if (!fireExplodeFrames.isEmpty()) {
+                QPixmap img = fireExplodeFrames[currentFrame % fireExplodeFrames.size()];
+                if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+                setOffset((48 - img.width()) / 2.0, 48 - img.height());
+                setPixmap(img);
+            }
+        }
+        return;
+    }
+
+    // ====== 新技能：火系疾跑状态拦截 ======
+    if (isFireSprinting) {
+        vx = facingRight ? 12.0 : -12.0;
+        fireSprintTimer--;
+
+        if (fireSprintTimer <= 0) {
+            endFireSprint();
+            return;
+        }
+
+        animTimer++;
+        if (animTimer >= 3) {
+            animTimer = 0;
+            rollCurrentFrame++;
+            if (rollCurrentFrame >= fireSprintFrames.size()) rollCurrentFrame = 0;
+
+            if (!fireSprintFrames.isEmpty()) {
+                QPixmap img = fireSprintFrames[rollCurrentFrame];
+                if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+                setOffset((48 - img.width()) / 2.0, 48 - img.height());
+                setPixmap(img);
+            }
+        }
+        return;
+    }
+
+    // ====== 新技能：叶子发羽毛拦截 ======
+    if (isLeafSkill) {
+        if (isOnGround) vx = 0;
+        attackAnimTimer++;
+        if (attackAnimTimer >= 3) {
+            attackAnimTimer = 0;
+            attackCurrentFrame++;
+            if (attackCurrentFrame >= leafAttackFrames.size()) {
+                endLeafSkill();
+                return;
+            }
+            QPixmap img = leafAttackFrames[attackCurrentFrame];
+            if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+            setOffset((48 - img.width()) / 2.0, 48 - img.height());
+            setPixmap(img);
+        }
+        return;
+    }
+
+    // ====== 纯净版：普通攻击状态拦截 ======
+    if (isAttacking) {
+        if (isOnGround) vx = 0;
+        attackAnimTimer++;
+        if (attackAnimTimer >= 3) {
+            attackAnimTimer = 0;
+            attackCurrentFrame++;
+            if (attackCurrentFrame >= attackFrames.size()) {
+                endAttack();
+                return;
+            }
+            QPixmap img = attackFrames[attackCurrentFrame];
+            if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+            setOffset((48 - img.width()) / 2.0, 48 - img.height());
+            setPixmap(img);
+        }
+        return;
+    }
+
+    // ====== 核心找回：变身消化状态拦截 ======
     if (isDigesting) {
         if (isOnGround) vx = 0;
         animTimer++;
-        if (animTimer >= 5) { // 变身抖动速度
+        if (animTimer >= 5) {
             animTimer = 0;
             currentFrame++;
 
@@ -269,7 +445,7 @@ void Player::updateLogic() {
         return;
     }
 
-    // 吐出状态拦截
+    // ====== 核心找回：吐出状态拦截 ======
     if (isSpitting) {
         if (isOnGround) vx = 0;
         animTimer++;
@@ -292,7 +468,7 @@ void Player::updateLogic() {
         return;
     }
 
-    // 吞噬状态拦截
+    // ====== 核心找回：吞噬状态拦截 ======
     if (isSwallowing) {
         if (isOnGround) vx = 0;
         animTimer++;
@@ -318,7 +494,7 @@ void Player::updateLogic() {
         return;
     }
 
-    // Fatty 状态拦截
+    // ====== 核心找回：Fatty(变胖)状态拦截 ======
     if (isFatty) {
         State targetState = (qAbs(vx) < 0.1) ? FATTY_IDLE : FATTY_WALKING;
         if (targetState != currentState) {
@@ -352,41 +528,13 @@ void Player::updateLogic() {
         return;
     }
 
-    // 攻击中（支持四形态）
-    if (isAttacking) {
-        if (isOnGround) vx = 0;
-
-        // 根据形态选择对应的攻击动画帧
-        QVector<QPixmap>* activeAttackFrames = &attackFrames;
-        if (currentForm == Enemy::FIRE && !fireAttackFrames.isEmpty()) activeAttackFrames = &fireAttackFrames;
-        else if (currentForm == Enemy::ICE && !iceAttackFrames.isEmpty()) activeAttackFrames = &iceAttackFrames;
-        else if (currentForm == Enemy::LEAF && !leafAttackFrames.isEmpty()) activeAttackFrames = &leafAttackFrames;
-        else if (currentForm == Enemy::SPARK && !lightningAttackFrames.isEmpty()) activeAttackFrames = &lightningAttackFrames;
-
-        attackAnimTimer++;
-        if (attackAnimTimer >= 3) {
-            attackAnimTimer = 0;
-            attackCurrentFrame++;
-            if (attackCurrentFrame >= activeAttackFrames->size()) {
-                endAttack();
-                return;
-            }
-            QPixmap img = (*activeAttackFrames)[attackCurrentFrame];
-            if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
-            setOffset((48 - img.width()) / 2.0, 48 - img.height());
-            setPixmap(img);
-        }
-        return;
-    }
-
-    // ====== 修改：翻滚中（支持四形态动态切换） ======
+    // ====== 翻滚中 ======
     if (isRolling) {
         rollAnimTimer++;
         if (rollAnimTimer >= 2) {
             rollAnimTimer = 0;
             rollCurrentFrame++;
 
-            // 根据形态选择翻滚帧
             QVector<QPixmap>* activeRollFrames = &rollFrames;
             if (currentForm == Enemy::FIRE && !fireRollFrames.isEmpty()) activeRollFrames = &fireRollFrames;
             else if (currentForm == Enemy::ICE && !iceRollFrames.isEmpty()) activeRollFrames = &iceRollFrames;
@@ -406,7 +554,7 @@ void Player::updateLogic() {
         return;
     }
 
-    // 常规物理运动状态切换
+    // ====== 常规物理运动状态切换 ======
     State targetState;
     if (!isOnGround) {
         targetState = JUMPING;
@@ -428,19 +576,25 @@ void Player::updateLogic() {
         QPixmap currentImage;
         switch (currentState) {
         case JUMPING: {
-            // 形态分支：跳跃/飞行动画
             QVector<QPixmap>* frames = &jumpFrames;
+            bool isTransformed = (currentForm != Enemy::NONE);
+
             if (currentForm == Enemy::FIRE && !fireJumpFrames.isEmpty()) frames = &fireJumpFrames;
             else if (currentForm == Enemy::ICE && !iceJumpFrames.isEmpty()) frames = &iceJumpFrames;
             else if (currentForm == Enemy::LEAF && !leafJumpFrames.isEmpty()) frames = &leafJumpFrames;
             else if (currentForm == Enemy::SPARK && !lightningJumpFrames.isEmpty()) frames = &lightningJumpFrames;
 
             if (!frames->isEmpty()) {
-                if (currentFrame <= 6) currentFrame = 6;
-                if (currentFrame >= 15) currentFrame = 6;
-                int safeFrame = currentFrame;
-                if (safeFrame >= frames->size()) safeFrame = frames->size() - 1;
-                currentImage = (*frames)[safeFrame];
+                if (!isTransformed) {
+                    if (currentFrame <= 6) currentFrame = 6;
+                    if (currentFrame >= 15) currentFrame = 6;
+                    int safeFrame = currentFrame;
+                    if (safeFrame >= frames->size()) safeFrame = frames->size() - 1;
+                    currentImage = (*frames)[safeFrame];
+                } else {
+                    int slowFrame = (currentFrame / 3) % frames->size();
+                    currentImage = (*frames)[slowFrame];
+                }
             }
             break;
         }
@@ -487,30 +641,43 @@ QPainterPath Player::shape() const {
     path.addRect(0, 0, 48, 48);
     return path;
 }
+// ====== 1. 纯净版的普通攻击 ======
 void Player::startAttack() {
-    // 根据当前形态选择对应的攻击动画帧
-    QVector<QPixmap>* activeAttackFrames = &attackFrames;
-    if (currentForm == Enemy::FIRE && !fireAttackFrames.isEmpty()) activeAttackFrames = &fireAttackFrames;
-    else if (currentForm == Enemy::ICE && !iceAttackFrames.isEmpty()) activeAttackFrames = &iceAttackFrames;
-    else if (currentForm == Enemy::LEAF && !leafAttackFrames.isEmpty()) activeAttackFrames = &leafAttackFrames;
-    else if (currentForm == Enemy::SPARK && !lightningAttackFrames.isEmpty()) activeAttackFrames = &lightningAttackFrames;
-
-    if (isAttacking || isRolling || activeAttackFrames->isEmpty()) return;
+    // 只有普通形态(NONE)可以发动普通攻击
+    if (currentForm != Enemy::NONE || attackFrames.isEmpty()) return;
+    if (isAttacking || isRolling || isLeafSkill) return;
 
     isAttacking = true;
     setState(ATTACKING);
     attackCurrentFrame = 0;
     attackAnimTimer = 0;
 
-    // 播放第一帧
-    QPixmap img = (*activeAttackFrames)[0];
+    QPixmap img = attackFrames[0];
     if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
     setOffset((48 - img.width()) / 2.0, 48 - img.height());
     setPixmap(img);
 }
-
 void Player::endAttack() {
     isAttacking = false;
+    setState(isOnGround ? IDLE : JUMPING);
+}
+// ====== 2. 全新的叶子技能专属动作 ======
+void Player::startLeafSkill() {
+    if (isLeafSkill || isRolling || leafAttackFrames.isEmpty()) return;
+
+    isLeafSkill = true;
+    // 借用 ATTACKING 状态来打断常规动画的播放
+    setState(ATTACKING);
+    attackCurrentFrame = 0;
+    attackAnimTimer = 0;
+
+    QPixmap img = leafAttackFrames[0];
+    if (!facingRight) img = img.transformed(QTransform().scale(-1, 1));
+    setOffset((48 - img.width()) / 2.0, 48 - img.height());
+    setPixmap(img);
+}
+void Player::endLeafSkill() {
+    isLeafSkill = false;
     setState(isOnGround ? IDLE : JUMPING);
 }
 void Player::startSwallow() {
@@ -544,4 +711,20 @@ void Player::startDigest() {
     setState(DIGESTING);
     currentFrame = 0;
     animTimer = 0;
+}
+// 在文件末尾或合适的地方添加这两个函数：
+void Player::startIceDefend() {
+    if (isIceDefending || iceDefendCooldownTimer > 0 || iceDefendFrames.isEmpty()) return;
+    isIceDefending = true;
+    iceDefendTimer = 300; // 5秒 * 60帧 = 300帧
+    setState(ATTACKING);  // 借用攻击状态打断常规步行动画
+    attackCurrentFrame = 0;
+    attackAnimTimer = 0;
+}
+
+void Player::endIceDefend() {
+    if (!isIceDefending) return;
+    isIceDefending = false;
+    iceDefendCooldownTimer = 600; // 10秒 * 60帧 = 600帧冷却
+    setState(isOnGround ? IDLE : JUMPING);
 }

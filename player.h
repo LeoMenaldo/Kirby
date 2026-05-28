@@ -34,6 +34,11 @@ public:
     void startAttack(); // 开始攻击
     void endAttack();   // 结束攻击
     bool isAttacking = false; // 是否正在攻击
+    // 找到之前的 isAttacking，在它附近添加：
+    bool isLeafSkill = false;   // 是否正在释放叶子技能
+    bool isLightningFlying = false;
+    void startLeafSkill();      // 开始释放叶子技能
+    void endLeafSkill();        // 结束释放叶子技能
     QPainterPath shape() const override;
     Enemy::CopyAbility swallowedAbility = Enemy::NONE;
     State currentState;
@@ -41,8 +46,16 @@ public:
     bool facingRight = true;
     bool isHovering = false;
     bool canDoubleJump = false;
-    bool isRolling = false;                          // 是否正在翻滚
-    int rollTimer = 0;                               // 翻滚剩余计时
+    bool isRolling = false;    // 是否正在翻滚
+    int rollTimer = 0;    // 翻滚剩余计时
+    bool isFireSprinting = false;     // 是否正在火形态疾跑
+    int fireSprintTimer = 0;          // 疾跑剩余时间
+    bool isExploding = false;         // 是否正在爆炸
+    int fireSkillCooldownTimer = 0;   // 技能冷却倒计时 (0表示可以使用)
+    int leafSkillCooldownTimer = 0;
+    void startFireSprint();
+    void endFireSprint();
+    void startExplosion();
     void startSwallow();
     void endSwallow();
     bool isSwallowing = false;  // 是否正在吞噬
@@ -52,6 +65,11 @@ public:
     bool hasAttackPower() const { return attackPowerTimer > 0; }
     void startDigest();                               // 开始消化能力
     bool isDigesting = false;                         // 是否正在播放消化变身动画
+    bool isIceDefending = false;         // 是否正在冰形态防御
+    int iceDefendTimer = 0;              // 防御持续时间计时器 (最多5秒)
+    int iceDefendCooldownTimer = 0;      // 防御冷却计时器 (10秒)
+    void startIceDefend();               // 开始防御
+    void endIceDefend();                 // 结束防御
     Enemy::CopyAbility currentForm = Enemy::NONE;     // 核心：当前卡比持有的形态能力（预留后续扩展空间）
 
     // 获取当前形态对应的元素属性
@@ -107,6 +125,9 @@ private:
     QVector<QPixmap> lightningJumpFrames;   // 电形态飞行跳跃
     QVector<QPixmap> lightningRollFrames;
     QVector<QPixmap> lightningAttackFrames; // 电形态攻击动画
+    QVector<QPixmap> fireSprintFrames;
+    QVector<QPixmap> fireExplodeFrames;
+    QVector<QPixmap> iceDefendFrames;    // 冰形态防御动画帧
 };
 
 #endif // PLAYER_H

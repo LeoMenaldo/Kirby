@@ -47,5 +47,11 @@
         <file>tu/lightning_fangun.png</file>
         <file>tu/lightning_sucai.png</file>
         <file>tu/kerby theme music.mp3</file>
+        <file>tu/fire_baozha.png</file>
+        <file>tu/fire_speedrun.png</file>
+        <file>tu/suishi.png</file>
+        <file>tu/feather.png</file>
+        <file>tu/leaf_attack.png</file>
+        <file>tu/ice_defend.png</file>
     </qresource>
 </RCC>

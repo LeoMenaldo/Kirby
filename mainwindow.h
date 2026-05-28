@@ -42,6 +42,7 @@ private:
     QGraphicsView *view;
     QTimer *timer;
     Player *player;
+    QPixmap waterBodyPix; // 新增：保存水的贴图以备融冰之用
     QList<QGraphicsRectItem*> backgroundLayers; // 新增：用于记录背景图层
     int lastHorizontalKey = 0;
     QList<Tile*> floors;
@@ -51,6 +52,9 @@ private:
     QList<Enemy*> enemies;
     QList<Projectile*> projectiles;
     QList<Cake*> cakes;
+    QVector<QPixmap> weiqiFrames;
+    QList<QGraphicsPixmapItem*> exhaustItems;
+    QList<int> exhaustLifetimes;
     QMediaPlayer *bgmPlayer;
     QAudioOutput *audioOutput;
     int aiTimer = 0;
